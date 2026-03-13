@@ -759,11 +759,11 @@
                         <div class="arch-item">AI Orchestration</div>
                         <div class="arch-item">Content Pipeline</div>
                     </div>
-                    <div class="arch-layer">
+                    <div class="arch-layer highlight">
                         <h4>Background Jobs</h4>
-                        <div class="arch-item">Inngest Workers</div>
-                        <div class="arch-item">Railway/Fly.io</div>
-                        <div class="arch-item">Job Queue (Redis)</div>
+                        <div class="arch-item">Inngest (Managed)</div>
+                        <div class="arch-item">Runs on Vercel</div>
+                        <div class="arch-item">Built-in DLQ + Retries</div>
                     </div>
                 </div>
                 <div class="architecture">
@@ -958,63 +958,70 @@
         <!-- Background Jobs Tab -->
         <div id="jobs" class="tab-content">
             <div class="card">
-                <h2>Job Pipeline Architecture</h2>
+                <h2>Job Pipeline Architecture (Inngest)</h2>
                 <div class="flow">
-                    <div class="flow-step">API Route</div>
+                    <div class="flow-step">Vercel API</div>
                     <span class="flow-arrow">→</span>
-                    <div class="flow-step primary">Redis Queue</div>
+                    <div class="flow-step primary">Inngest Cloud</div>
                     <span class="flow-arrow">→</span>
-                    <div class="flow-step secondary">Worker (Railway)</div>
+                    <div class="flow-step secondary">Inngest Fn (Vercel)</div>
                     <span class="flow-arrow">→</span>
                     <div class="flow-step">External APIs</div>
                 </div>
+                <p style="text-align: center; color: var(--text-muted); margin-top: 1rem; font-size: 0.875rem;">
+                    Zero infrastructure to manage. Built-in retries, scheduling, and dead letter queues.
+                </p>
             </div>
 
             <div class="card">
-                <h2>Job Types</h2>
+                <h2>Inngest Functions</h2>
                 <div class="pipeline">
                     <div class="pipeline-stage">
                         <h4>Scheduled</h4>
                         <div class="job-card">
-                            <strong>PostContent</strong>
+                            <strong>post-content</strong>
                             <div class="retry">3 retries, exp backoff</div>
                         </div>
                         <div class="job-card">
-                            <strong>SendReminder</strong>
+                            <strong>send-reminder</strong>
                             <div class="retry">3 retries</div>
                         </div>
                     </div>
                     <div class="pipeline-stage">
-                        <h4>Periodic</h4>
+                        <h4>Cron</h4>
                         <div class="job-card">
-                            <strong>RefreshToken</strong>
-                            <div class="retry">5 retries / 24h</div>
+                            <strong>refresh-token</strong>
+                            <div class="retry">Daily, 5 retries</div>
                         </div>
                         <div class="job-card">
-                            <strong>SyncCalendar</strong>
+                            <strong>sync-calendar</strong>
                             <div class="retry">Every 15min</div>
                         </div>
                         <div class="job-card">
-                            <strong>CheckSilence</strong>
-                            <div class="retry">Daily</div>
+                            <strong>check-silence</strong>
+                            <div class="retry">Daily 9am</div>
                         </div>
                     </div>
                     <div class="pipeline-stage">
                         <h4>Event-Driven</h4>
                         <div class="job-card">
-                            <strong>ProcessWebhook</strong>
+                            <strong>process-webhook</strong>
                             <div class="retry">5 retries</div>
                         </div>
                         <div class="job-card">
-                            <strong>ReportUsage</strong>
-                            <div class="retry">Daily batch</div>
+                            <strong>report-usage</strong>
+                            <div class="retry">Daily midnight</div>
+                        </div>
+                        <div class="job-card">
+                            <strong>reconcile-billing</strong>
+                            <div class="retry">Weekly</div>
                         </div>
                     </div>
                     <div class="pipeline-stage">
-                        <h4>Dead Letter</h4>
+                        <h4>Built-in DLQ</h4>
                         <div class="job-card">
-                            <strong>Failed Jobs</strong>
-                            <div class="retry">Manual review</div>
+                            <strong>Inngest Dashboard</strong>
+                            <div class="retry">View + retry failed</div>
                         </div>
                     </div>
                 </div>
@@ -1186,10 +1193,10 @@
                         </ul>
                     </div>
                     <div class="timeline-item">
-                        <div class="timeline-week">Week 3: Background Jobs</div>
+                        <div class="timeline-week">Week 3: Background Jobs (Inngest)</div>
                         <ul class="timeline-tasks">
-                            <li>Inngest/BullMQ worker setup</li>
-                            <li>Job types: PostContent, RefreshToken, SyncCalendar</li>
+                            <li>Inngest SDK setup + first test function</li>
+                            <li>Functions: post-content, refresh-token, sync-calendar</li>
                             <li>Content scheduling system</li>
                             <li>Calendar sync implementation</li>
                         </ul>
