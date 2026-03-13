@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Juno - Design Visualization</title>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --bg: #0f172a;
+            --bg-card: #1e293b;
+            --bg-card-hover: #334155;
+            --text: #f1f5f9;
+            --text-muted: #94a3b8;
+            --border: #334155;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2rem;
+            background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 100%);
+            border-radius: 1rem;
+        }
+
+        header h1 {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+        }
+
+        header p {
+            font-size: 1.25rem;
+            opacity: 0.9;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .tab {
+            padding: 0.75rem 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text-muted);
+        }
+
+        .tab:hover {
+            background: var(--bg-card-hover);
+            color: var(--text);
+        }
+
+        .tab.active {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: white;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card h2 {
+            color: var(--primary);
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+        }
+
+        .card h3 {
+            color: var(--text);
+            margin: 1rem 0 0.5rem;
+            font-size: 1.1rem;
+        }
+
+        /* Architecture Diagram */
+        .architecture {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+
+        .arch-layer {
+            background: var(--bg-card);
+            border: 2px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .arch-layer.highlight {
+            border-color: var(--primary);
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
+        }
+
+        .arch-layer h4 {
+            color: var(--primary);
+            margin-bottom: 0.75rem;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .arch-item {
+            background: var(--bg);
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            margin: 0.5rem 0;
+            font-size: 0.875rem;
+        }
+
+        /* Flow Diagram */
+        .flow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin: 1.5rem 0;
+        }
+
+        .flow-step {
+            background: var(--bg-card);
+            border: 2px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 1rem 1.5rem;
+            text-align: center;
+            min-width: 120px;
+            transition: all 0.3s;
+        }
+
+        .flow-step:hover {
+            border-color: var(--primary);
+            transform: translateY(-2px);
+        }
+
+        .flow-step.primary {
+            border-color: var(--primary);
+            background: rgba(99, 102, 241, 0.1);
+        }
+
+        .flow-step.secondary {
+            border-color: var(--secondary);
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .flow-step.warning {
+            border-color: var(--warning);
+            background: rgba(245, 158, 11, 0.1);
+        }
+
+        .flow-arrow {
+            color: var(--text-muted);
+            font-size: 1.5rem;
+        }
+
+        /* Data Model */
+        .data-model {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+
+        .entity {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            overflow: hidden;
+        }
+
+        .entity-header {
+            background: var(--primary);
+            padding: 0.75rem 1rem;
+            font-weight: 600;
+        }
+
+        .entity-header.new {
+            background: var(--secondary);
+        }
+
+        .entity-fields {
+            padding: 0.75rem 1rem;
+        }
+
+        .field {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.25rem 0;
+            font-size: 0.875rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .field:last-child {
+            border-bottom: none;
+        }
+
+        .field-name {
+            color: var(--text);
+        }
+
+        .field-type {
+            color: var(--text-muted);
+            font-family: monospace;
+        }
+
+        /* Timeline */
+        .timeline {
+            position: relative;
+            padding-left: 2rem;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--border);
+        }
+
+        .timeline-item {
+            position: relative;
+            padding: 1rem 0 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .timeline-item:last-child {
+            border-bottom: none;
+        }
+
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -2rem;
+            top: 1.25rem;
+            width: 12px;
+            height: 12px;
+            background: var(--primary);
+            border-radius: 50%;
+            border: 2px solid var(--bg);
+        }
+
+        .timeline-item.completed::before {
+            background: var(--secondary);
+        }
+
+        .timeline-week {
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .timeline-tasks {
+            list-style: none;
+        }
+
+        .timeline-tasks li {
+            padding: 0.25rem 0;
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+
+        .timeline-tasks li::before {
+            content: '[ ] ';
+            font-family: monospace;
+        }
+
+        /* Pricing */
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .pricing-card {
+            background: var(--bg);
+            border: 2px solid var(--border);
+            border-radius: 1rem;
+            padding: 2rem;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .pricing-card:hover {
+            border-color: var(--primary);
+            transform: translateY(-4px);
+        }
+
+        .pricing-card.featured {
+            border-color: var(--primary);
+            position: relative;
+        }
+
+        .pricing-card.featured::before {
+            content: 'Popular';
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--primary);
+            padding: 0.25rem 1rem;
+            border-radius: 1rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .pricing-name {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .pricing-price {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .pricing-price span {
+            font-size: 1rem;
+            color: var(--text-muted);
+        }
+
+        .pricing-features {
+            list-style: none;
+            margin: 1.5rem 0;
+            text-align: left;
+        }
+
+        .pricing-features li {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.875rem;
+        }
+
+        .pricing-features li::before {
+            content: '✓ ';
+            color: var(--secondary);
+        }
+
+        /* Job Pipeline */
+        .pipeline {
+            display: flex;
+            gap: 1rem;
+            overflow-x: auto;
+            padding: 1rem 0;
+        }
+
+        .pipeline-stage {
+            flex: 0 0 200px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 1rem;
+        }
+
+        .pipeline-stage h4 {
+            color: var(--primary);
+            font-size: 0.875rem;
+            margin-bottom: 0.75rem;
+            text-transform: uppercase;
+        }
+
+        .job-card {
+            background: var(--bg-card);
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            margin-bottom: 0.5rem;
+            font-size: 0.8rem;
+        }
+
+        .job-card .retry {
+            color: var(--text-muted);
+            font-size: 0.7rem;
+        }
+
+        /* User Journey */
+        .journey {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .journey-phase {
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+        }
+
+        .journey-label {
+            flex: 0 0 120px;
+            background: var(--primary);
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .journey-label.web {
+            background: var(--secondary);
+        }
+
+        .journey-label.whatsapp {
+            background: #25D366;
+        }
+
+        .journey-steps {
+            flex: 1;
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .journey-step {
+            background: var(--bg);
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            border: 1px solid var(--border);
+        }
+
+        /* Moderation Pipeline */
+        .moderation-flow {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin: 1rem 0;
+        }
+
+        .mod-step {
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            text-align: center;
+        }
+
+        .mod-step.input {
+            background: var(--bg);
+            border: 1px solid var(--border);
+        }
+
+        .mod-step.process {
+            background: rgba(99, 102, 241, 0.2);
+            border: 1px solid var(--primary);
+        }
+
+        .mod-step.decision {
+            background: rgba(245, 158, 11, 0.2);
+            border: 1px solid var(--warning);
+            clip-path: polygon(10% 0%, 90% 0%, 100% 50%, 90% 100%, 10% 100%, 0% 50%);
+            padding: 0.75rem 1.5rem;
+        }
+
+        .mod-step.output-good {
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid var(--secondary);
+        }
+
+        .mod-step.output-review {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid var(--danger);
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .stat {
+            background: var(--bg);
+            padding: 1rem;
+            border-radius: 0.75rem;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        /* WhatsApp Preview */
+        .whatsapp-preview {
+            max-width: 360px;
+            margin: 1rem auto;
+            background: #0b141a;
+            border-radius: 1rem;
+            overflow: hidden;
+        }
+
+        .wa-header {
+            background: #202c33;
+            padding: 0.75rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .wa-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--primary), #8b5cf6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+        }
+
+        .wa-name {
+            font-weight: 600;
+        }
+
+        .wa-status {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .wa-messages {
+            padding: 1rem;
+            min-height: 300px;
+        }
+
+        .wa-msg {
+            max-width: 80%;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .wa-msg.received {
+            background: #202c33;
+            border-bottom-left-radius: 0;
+        }
+
+        .wa-msg.sent {
+            background: #005c4b;
+            margin-left: auto;
+            border-bottom-right-radius: 0;
+        }
+
+        .wa-msg .time {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            text-align: right;
+            margin-top: 0.25rem;
+        }
+
+        .wa-buttons {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .wa-btn {
+            background: transparent;
+            border: 1px solid #00a884;
+            color: #00a884;
+            padding: 0.5rem 1rem;
+            border-radius: 2rem;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+
+        .wa-btn:hover {
+            background: rgba(0, 168, 132, 0.1);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .architecture {
+                grid-template-columns: 1fr;
+            }
+
+            .tabs {
+                justify-content: center;
+            }
+
+            header h1 {
+                font-size: 2rem;
+            }
+
+            .journey-phase {
+                flex-direction: column;
+            }
+
+            .journey-label {
+                flex: none;
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Juno</h1>
+            <p>AI Chief of Staff for Coaches</p>
+        </header>
+
+        <div class="tabs">
+            <div class="tab active" onclick="showTab('overview')">Overview</div>
+            <div class="tab" onclick="showTab('architecture')">Architecture</div>
+            <div class="tab" onclick="showTab('userflow')">User Flow</div>
+            <div class="tab" onclick="showTab('datamodel')">Data Model</div>
+            <div class="tab" onclick="showTab('jobs')">Background Jobs</div>
+            <div class="tab" onclick="showTab('moderation')">Content Moderation</div>
+            <div class="tab" onclick="showTab('pricing')">Pricing</div>
+            <div class="tab" onclick="showTab('timeline')">Timeline</div>
+        </div>
+
+        <!-- Overview Tab -->
+        <div id="overview" class="tab-content active">
+            <div class="card">
+                <h2>What is Juno?</h2>
+                <p>An autonomous AI business assistant for coaches that handles content creation, scheduling, and business operations so coaches can focus on coaching.</p>
+
+                <div class="stats-grid">
+                    <div class="stat">
+                        <div class="stat-value">8</div>
+                        <div class="stat-label">Weeks to MVP</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">70%</div>
+                        <div class="stat-label">Target Retention</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">10</div>
+                        <div class="stat-label">Beta Coaches</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">$49</div>
+                        <div class="stat-label">Starting Price</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Core Features (MVP)</h2>
+                <div class="flow">
+                    <div class="flow-step primary">
+                        <strong>Content Creation</strong>
+                        <br><small>AI-generated posts</small>
+                    </div>
+                    <span class="flow-arrow">+</span>
+                    <div class="flow-step primary">
+                        <strong>Scheduling</strong>
+                        <br><small>Auto-post to Instagram</small>
+                    </div>
+                    <span class="flow-arrow">+</span>
+                    <div class="flow-step primary">
+                        <strong>Calendar Sync</strong>
+                        <br><small>Google Calendar</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>WhatsApp Interface Preview</h2>
+                <div class="whatsapp-preview">
+                    <div class="wa-header">
+                        <div class="wa-avatar">J</div>
+                        <div>
+                            <div class="wa-name">Juno</div>
+                            <div class="wa-status">online</div>
+                        </div>
+                    </div>
+                    <div class="wa-messages">
+                        <div class="wa-msg sent">
+                            I need content for this week
+                            <div class="time">10:30 AM</div>
+                        </div>
+                        <div class="wa-msg received">
+                            I've drafted 5 posts for you! Here's what I've prepared:
+                            <br><br>
+                            1. Monday: Client transformation story
+                            2. Tuesday: Quick workout tip
+                            3. Wednesday: Nutrition myth-buster
+                            4. Thursday: Behind-the-scenes
+                            5. Friday: Weekend motivation
+                            <div class="wa-buttons">
+                                <button class="wa-btn">Review All</button>
+                                <button class="wa-btn">Auto-approve</button>
+                            </div>
+                            <div class="time">10:31 AM</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Architecture Tab -->
+        <div id="architecture" class="tab-content">
+            <div class="card">
+                <h2>System Architecture</h2>
+                <div class="architecture">
+                    <div class="arch-layer">
+                        <h4>Interfaces</h4>
+                        <div class="arch-item">WhatsApp Business API</div>
+                        <div class="arch-item">Web Portal (Next.js)</div>
+                        <div class="arch-item">Webhooks</div>
+                    </div>
+                    <div class="arch-layer highlight">
+                        <h4>Application</h4>
+                        <div class="arch-item">Next.js API Routes</div>
+                        <div class="arch-item">AI Orchestration</div>
+                        <div class="arch-item">Content Pipeline</div>
+                    </div>
+                    <div class="arch-layer">
+                        <h4>Background Jobs</h4>
+                        <div class="arch-item">Inngest Workers</div>
+                        <div class="arch-item">Railway/Fly.io</div>
+                        <div class="arch-item">Job Queue (Redis)</div>
+                    </div>
+                </div>
+                <div class="architecture">
+                    <div class="arch-layer">
+                        <h4>AI Models</h4>
+                        <div class="arch-item">Claude (Content)</div>
+                        <div class="arch-item">GPT-4 (Tools)</div>
+                        <div class="arch-item">Haiku (Classification)</div>
+                    </div>
+                    <div class="arch-layer">
+                        <h4>Data</h4>
+                        <div class="arch-item">PostgreSQL</div>
+                        <div class="arch-item">Redis</div>
+                        <div class="arch-item">Vercel Blob</div>
+                    </div>
+                    <div class="arch-layer">
+                        <h4>Integrations</h4>
+                        <div class="arch-item">Instagram Graph API</div>
+                        <div class="arch-item">Google Calendar</div>
+                        <div class="arch-item">Stripe</div>
+                        <div class="arch-item">Canva Connect</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Request Flow</h2>
+                <div class="flow">
+                    <div class="flow-step">Coach (WhatsApp)</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step">WhatsApp API</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">Webhook Handler</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">AI Orchestrator</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step secondary">Execute Action</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Flow Tab -->
+        <div id="userflow" class="tab-content">
+            <div class="card">
+                <h2>Onboarding Journey</h2>
+                <div class="journey">
+                    <div class="journey-phase">
+                        <div class="journey-label web">Web Portal</div>
+                        <div class="journey-steps">
+                            <div class="journey-step">Sign Up (Magic Link)</div>
+                            <div class="journey-step">Connect Instagram</div>
+                            <div class="journey-step">Connect Google Cal</div>
+                            <div class="journey-step">Link WhatsApp</div>
+                        </div>
+                    </div>
+                    <div class="journey-phase">
+                        <div class="journey-label whatsapp">WhatsApp</div>
+                        <div class="journey-steps">
+                            <div class="journey-step">Welcome Message</div>
+                            <div class="journey-step">Brand Discovery Chat</div>
+                            <div class="journey-step">Analyze Existing Posts</div>
+                            <div class="journey-step">Generate Sample Content</div>
+                        </div>
+                    </div>
+                    <div class="journey-phase">
+                        <div class="journey-label web">Web Portal</div>
+                        <div class="journey-steps">
+                            <div class="journey-step">Review Sample Posts</div>
+                            <div class="journey-step">Edit & Approve</div>
+                            <div class="journey-step">First Post Scheduled!</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Daily Usage Flow</h2>
+                <div class="flow">
+                    <div class="flow-step">Coach Request</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">Juno Generates</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step warning">Moderation Check</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step secondary">Schedule/Post</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step">Track Analytics</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Autonomy Levels</h2>
+                <div class="flow">
+                    <div class="flow-step secondary">
+                        <strong>High Confidence</strong>
+                        <br><small>Auto-execute</small>
+                    </div>
+                    <div class="flow-step warning">
+                        <strong>Medium Confidence</strong>
+                        <br><small>Execute + Notify</small>
+                    </div>
+                    <div class="flow-step" style="border-color: var(--danger);">
+                        <strong>Low Confidence</strong>
+                        <br><small>Ask First</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Model Tab -->
+        <div id="datamodel" class="tab-content">
+            <div class="card">
+                <h2>Core Entities</h2>
+                <div class="data-model">
+                    <div class="entity">
+                        <div class="entity-header">Coach</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">id</span><span class="field-type">uuid</span></div>
+                            <div class="field"><span class="field-name">email</span><span class="field-type">string</span></div>
+                            <div class="field"><span class="field-name">phone</span><span class="field-type">string</span></div>
+                            <div class="field"><span class="field-name">timezone</span><span class="field-type">string</span></div>
+                            <div class="field"><span class="field-name">brand_voice</span><span class="field-type">json</span></div>
+                            <div class="field"><span class="field-name">business_goals</span><span class="field-type">json</span></div>
+                            <div class="field"><span class="field-name">subscription_status</span><span class="field-type">enum</span></div>
+                        </div>
+                    </div>
+
+                    <div class="entity">
+                        <div class="entity-header">Content</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">id</span><span class="field-type">uuid</span></div>
+                            <div class="field"><span class="field-name">coach_id</span><span class="field-type">fk</span></div>
+                            <div class="field"><span class="field-name">type</span><span class="field-type">enum</span></div>
+                            <div class="field"><span class="field-name">current_revision_id</span><span class="field-type">fk</span></div>
+                            <div class="field"><span class="field-name">status</span><span class="field-type">enum</span></div>
+                            <div class="field"><span class="field-name">scheduled_at</span><span class="field-type">timestamp</span></div>
+                            <div class="field"><span class="field-name">external_id</span><span class="field-type">string?</span></div>
+                        </div>
+                    </div>
+
+                    <div class="entity">
+                        <div class="entity-header new">ContentRevision (NEW)</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">id</span><span class="field-type">uuid</span></div>
+                            <div class="field"><span class="field-name">content_id</span><span class="field-type">fk</span></div>
+                            <div class="field"><span class="field-name">version</span><span class="field-type">int</span></div>
+                            <div class="field"><span class="field-name">text</span><span class="field-type">text</span></div>
+                            <div class="field"><span class="field-name">media_urls</span><span class="field-type">json</span></div>
+                            <div class="field"><span class="field-name">rendered_payload</span><span class="field-type">json</span></div>
+                        </div>
+                    </div>
+
+                    <div class="entity">
+                        <div class="entity-header new">ContentModeration (NEW)</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">id</span><span class="field-type">uuid</span></div>
+                            <div class="field"><span class="field-name">content_id</span><span class="field-type">fk</span></div>
+                            <div class="field"><span class="field-name">category</span><span class="field-type">enum</span></div>
+                            <div class="field"><span class="field-name">confidence_score</span><span class="field-type">float</span></div>
+                            <div class="field"><span class="field-name">flagged</span><span class="field-type">bool</span></div>
+                            <div class="field"><span class="field-name">reviewed_by_coach</span><span class="field-type">bool</span></div>
+                        </div>
+                    </div>
+
+                    <div class="entity">
+                        <div class="entity-header">Action</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">id</span><span class="field-type">uuid</span></div>
+                            <div class="field"><span class="field-name">coach_id</span><span class="field-type">fk</span></div>
+                            <div class="field"><span class="field-name">type</span><span class="field-type">enum</span></div>
+                            <div class="field"><span class="field-name">payload</span><span class="field-type">json</span></div>
+                            <div class="field"><span class="field-name">status</span><span class="field-type">enum</span></div>
+                            <div class="field"><span class="field-name">confidence_score</span><span class="field-type">float</span></div>
+                        </div>
+                    </div>
+
+                    <div class="entity">
+                        <div class="entity-header new">UsageEvent (NEW)</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">id</span><span class="field-type">uuid</span></div>
+                            <div class="field"><span class="field-name">coach_id</span><span class="field-type">fk</span></div>
+                            <div class="field"><span class="field-name">event_type</span><span class="field-type">enum</span></div>
+                            <div class="field"><span class="field-name">quantity</span><span class="field-type">int</span></div>
+                            <div class="field"><span class="field-name">billable</span><span class="field-type">bool</span></div>
+                            <div class="field"><span class="field-name">reported_to_stripe</span><span class="field-type">bool</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Background Jobs Tab -->
+        <div id="jobs" class="tab-content">
+            <div class="card">
+                <h2>Job Pipeline Architecture</h2>
+                <div class="flow">
+                    <div class="flow-step">API Route</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">Redis Queue</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step secondary">Worker (Railway)</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step">External APIs</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Job Types</h2>
+                <div class="pipeline">
+                    <div class="pipeline-stage">
+                        <h4>Scheduled</h4>
+                        <div class="job-card">
+                            <strong>PostContent</strong>
+                            <div class="retry">3 retries, exp backoff</div>
+                        </div>
+                        <div class="job-card">
+                            <strong>SendReminder</strong>
+                            <div class="retry">3 retries</div>
+                        </div>
+                    </div>
+                    <div class="pipeline-stage">
+                        <h4>Periodic</h4>
+                        <div class="job-card">
+                            <strong>RefreshToken</strong>
+                            <div class="retry">5 retries / 24h</div>
+                        </div>
+                        <div class="job-card">
+                            <strong>SyncCalendar</strong>
+                            <div class="retry">Every 15min</div>
+                        </div>
+                        <div class="job-card">
+                            <strong>CheckSilence</strong>
+                            <div class="retry">Daily</div>
+                        </div>
+                    </div>
+                    <div class="pipeline-stage">
+                        <h4>Event-Driven</h4>
+                        <div class="job-card">
+                            <strong>ProcessWebhook</strong>
+                            <div class="retry">5 retries</div>
+                        </div>
+                        <div class="job-card">
+                            <strong>ReportUsage</strong>
+                            <div class="retry">Daily batch</div>
+                        </div>
+                    </div>
+                    <div class="pipeline-stage">
+                        <h4>Dead Letter</h4>
+                        <div class="job-card">
+                            <strong>Failed Jobs</strong>
+                            <div class="retry">Manual review</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Failure Handling</h2>
+                <div class="flow">
+                    <div class="flow-step">Job Fails</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step warning">Retry (exponential)</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step" style="border-color: var(--danger);">Max Retries Hit</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step">Dead Letter Queue</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step secondary">Alert Coach</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Content Moderation Tab -->
+        <div id="moderation" class="tab-content">
+            <div class="card">
+                <h2>Sensitive Content Detection Pipeline</h2>
+                <div class="moderation-flow">
+                    <div class="mod-step input">Generated Content</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="mod-step process">Keyword Scan</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="mod-step process">LLM Classification</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="mod-step decision">Confidence?</div>
+                </div>
+                <div class="moderation-flow" style="margin-top: 1rem;">
+                    <div class="mod-step output-good">High Confidence Safe → Auto-proceed</div>
+                    <div class="mod-step output-review">Any Doubt → Flag for Review</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Flagged Categories</h2>
+                <div class="flow">
+                    <div class="flow-step warning">Health Claims</div>
+                    <div class="flow-step warning">Mental Health</div>
+                    <div class="flow-step warning">Before/After</div>
+                    <div class="flow-step warning">Supplements</div>
+                    <div class="flow-step warning">Injury Advice</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Undo Capabilities</h2>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <th style="text-align: left; padding: 0.75rem;">Action</th>
+                        <th style="text-align: center; padding: 0.75rem;">Undoable?</th>
+                        <th style="text-align: left; padding: 0.75rem;">Method</th>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem;">Scheduled post</td>
+                        <td style="text-align: center; color: var(--secondary);">✓</td>
+                        <td style="padding: 0.75rem;">Delete from queue</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem;">Published post</td>
+                        <td style="text-align: center; color: var(--secondary);">✓</td>
+                        <td style="padding: 0.75rem;">Delete via Instagram API</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem;">Published Story</td>
+                        <td style="text-align: center; color: var(--danger);">✗</td>
+                        <td style="padding: 0.75rem;">Stories expire, cannot undo</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem;">Calendar event</td>
+                        <td style="text-align: center; color: var(--secondary);">✓</td>
+                        <td style="padding: 0.75rem;">Delete via Google API</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.75rem;">Content edit</td>
+                        <td style="text-align: center; color: var(--secondary);">✓</td>
+                        <td style="padding: 0.75rem;">Restore previous revision</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Pricing Tab -->
+        <div id="pricing" class="tab-content">
+            <div class="card">
+                <h2>Pricing Tiers</h2>
+                <div class="pricing-grid">
+                    <div class="pricing-card">
+                        <div class="pricing-name">Base</div>
+                        <div class="pricing-price">$49<span>/mo</span></div>
+                        <ul class="pricing-features">
+                            <li>Up to 30 posts/month</li>
+                            <li>Basic scheduling</li>
+                            <li>WhatsApp access</li>
+                            <li>1 Instagram account</li>
+                            <li>Basic analytics</li>
+                        </ul>
+                    </div>
+                    <div class="pricing-card featured">
+                        <div class="pricing-name">Growth</div>
+                        <div class="pricing-price">$99<span>/mo</span></div>
+                        <ul class="pricing-features">
+                            <li>Up to 100 posts/month</li>
+                            <li>Advanced scheduling</li>
+                            <li>WhatsApp access</li>
+                            <li>1 Instagram account</li>
+                            <li>Advanced analytics</li>
+                            <li>Priority support</li>
+                            <li>Content calendar</li>
+                        </ul>
+                    </div>
+                    <div class="pricing-card">
+                        <div class="pricing-name">Overages</div>
+                        <div class="pricing-price" style="font-size: 1.5rem;">Usage-based</div>
+                        <ul class="pricing-features">
+                            <li>$0.50 per additional post</li>
+                            <li>$0.10 per AI interaction</li>
+                            <li>Billed monthly</li>
+                            <li>Undone posts not charged</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Usage Metering Flow</h2>
+                <div class="flow">
+                    <div class="flow-step">Action Executed</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step">Write UsageEvent</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">Daily Batch</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step secondary">Report to Stripe</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step">Invoice</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Timeline Tab -->
+        <div id="timeline" class="tab-content">
+            <div class="card">
+                <h2>8-Week MVP Timeline</h2>
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <div class="timeline-week">Week 1: Foundation</div>
+                        <ul class="timeline-tasks">
+                            <li>Next.js project setup with TypeScript</li>
+                            <li>PostgreSQL + Redis setup</li>
+                            <li>Auth system (magic link)</li>
+                            <li>Apply for WhatsApp Business API</li>
+                            <li>Apply for Canva Connect API</li>
+                        </ul>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-week">Week 2: Web Portal Core</div>
+                        <ul class="timeline-tasks">
+                            <li>Web portal: signup, login, settings</li>
+                            <li>OAuth integration: Instagram</li>
+                            <li>OAuth integration: Google Calendar</li>
+                            <li>Token storage and refresh infrastructure</li>
+                        </ul>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-week">Week 3: Background Jobs</div>
+                        <ul class="timeline-tasks">
+                            <li>Inngest/BullMQ worker setup</li>
+                            <li>Job types: PostContent, RefreshToken, SyncCalendar</li>
+                            <li>Content scheduling system</li>
+                            <li>Calendar sync implementation</li>
+                        </ul>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-week">Week 4: Content Generation</div>
+                        <ul class="timeline-tasks">
+                            <li>Claude integration for content generation</li>
+                            <li>Voice learning from existing posts</li>
+                            <li>Content preview and approval flow</li>
+                            <li>Sensitive content detection pipeline</li>
+                        </ul>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-week">Week 5: WhatsApp Integration</div>
+                        <ul class="timeline-tasks">
+                            <li>WhatsApp Business API (or web chat fallback)</li>
+                            <li>Conversation handling and state management</li>
+                            <li>Deep links to web portal</li>
+                            <li>Quick-reply buttons and nudges</li>
+                        </ul>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-week">Week 6: Instagram + Undo</div>
+                        <ul class="timeline-tasks">
+                            <li>Instagram posting via Graph API</li>
+                            <li>Content versioning (ContentRevision)</li>
+                            <li>Undo functionality</li>
+                            <li>Posting failure handling</li>
+                        </ul>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-week">Week 7: Billing + Analytics</div>
+                        <ul class="timeline-tasks">
+                            <li>Stripe subscription integration</li>
+                            <li>Usage metering pipeline</li>
+                            <li>Basic analytics dashboard</li>
+                            <li>Activity log with undo buttons</li>
+                        </ul>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-week">Week 8: Launch</div>
+                        <ul class="timeline-tasks">
+                            <li>End-to-end testing</li>
+                            <li>Error handling audit</li>
+                            <li>Security review</li>
+                            <li>Beta launch with 5-10 coaches</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showTab(tabId) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // Show selected tab
+            document.getElementById(tabId).classList.add('active');
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>

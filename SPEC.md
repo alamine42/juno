@@ -27,7 +27,8 @@ Create space and time for coaches to do what they do best—coach—by automatin
 | Go-to-Market | Direct B2C to coaches |
 | Personality | Encouraging business partner |
 | Success Metric | 30-day retention |
-| Timeline | 8 weeks to MVP (revised) |
+| Timeline | 8 weeks to MVP |
+| **Background Jobs** | **Inngest (managed)** |
 
 ---
 
@@ -78,8 +79,8 @@ Create space and time for coaches to do what they do best—coach—by automatin
 - **Proactive nudges:** Juno surfaces opportunities (trending topics, engagement spikes, content gaps)
 - **Deep links:** WhatsApp messages include links to web portal for rich content review
 
-### 4. Web Portal (MVP Addition)
-**Goal:** Handle OAuth flows and provide rich content review interface
+### 4. Web Portal
+**Goal:** Handle OAuth flows, rich content review, and serve as WhatsApp fallback
 
 The web portal is a lightweight companion to WhatsApp, not a full dashboard replacement.
 
@@ -90,13 +91,38 @@ The web portal is a lightweight companion to WhatsApp, not a full dashboard repl
 - Activity log and audit trail browser
 - Basic analytics display
 - Account settings and billing management
+- **Chat interface (WhatsApp fallback)**
 
 **UX Flow:**
 1. Coach signs up via web portal (email/magic link)
 2. Connects Instagram, Google Calendar via OAuth
-3. Links WhatsApp number
-4. Day-to-day interaction happens in WhatsApp
-5. WhatsApp sends deep links to portal for rich reviews
+3. Links WhatsApp number (or uses web chat if WhatsApp unavailable)
+4. Day-to-day interaction happens in WhatsApp (or web chat)
+5. WhatsApp/web chat sends deep links to portal for rich reviews
+
+### 5. Web Chat Fallback (If WhatsApp Delayed)
+**Goal:** Provide full Juno experience without WhatsApp dependency
+
+If WhatsApp Business API approval is delayed, the web portal includes a native chat interface:
+
+**Features (parity with WhatsApp):**
+- Real-time chat with Juno in browser
+- Quick-action buttons (same as WhatsApp quick replies)
+- Proactive nudges via browser notifications (with permission)
+- Deep links to content review, calendar, analytics
+- Mobile-responsive design for on-the-go use
+- Push notifications for scheduled post confirmations
+
+**Technical Implementation:**
+- WebSocket connection for real-time messaging
+- Same conversation state model as WhatsApp
+- Same AI orchestration layer (channel-agnostic)
+- Notification opt-in during onboarding
+
+**UX Differences from WhatsApp:**
+- Coach must open browser (no push to locked phone)
+- Browser notifications less reliable than WhatsApp
+- No voice messages (WhatsApp supports, web chat doesn't)
 
 ---
 
@@ -114,13 +140,25 @@ The web portal is a lightweight companion to WhatsApp, not a full dashboard repl
 - Content mentioning specific clients by name
 
 ### Sensitive Content Detection & Handling
-**Detection Pipeline (runs before any content is scheduled/posted):**
+**Detection Pipeline:**
+
+Moderation runs at **three checkpoints** to prevent bypass:
+1. **On content generation:** When Juno first creates the content
+2. **On every revision:** When `Content.current_revision_id` changes (coach edits)
+3. **Immediately before posting:** Final gate in the PostContent job
+
+**Detection Steps:**
 1. **Keyword/regex scan:** Flag terms like "weight loss", "cure", "treatment", "anxiety", "depression", mental health terms
 2. **LLM classification:** Claude Haiku classifies content as sensitive/not-sensitive with confidence score
 3. **Decision logic:**
    - High confidence not-sensitive: Proceed with normal autonomy rules
    - Any other result: Flag for coach review, never auto-post
-4. **Store classification:** Log category, confidence, and decision in ContentModeration table
+4. **Store classification:** Log category, confidence, decision, and **revision_id** in ContentModeration table
+
+**Posting Gate:**
+- PostContent job compares `ContentModeration.revision_id` with `Content.current_revision_id`
+- If mismatch: Re-run moderation before posting
+- If flagged: Block posting, notify coach, require explicit approval
 
 **Categories flagged:**
 - Health claims (nutrition, weight, medical)
@@ -146,15 +184,26 @@ The web portal is a lightweight companion to WhatsApp, not a full dashboard repl
 
 *Instagram deletion may leave cached versions in feeds briefly
 
+**Undo States (surfaced in Activity Log):**
+| State | Description | User Action |
+|-------|-------------|-------------|
+| Undo available | Action can be reversed | Show "Undo" button |
+| Undo pending | Undo in progress | Show spinner |
+| Undo complete | Successfully reversed | Show "Undone" badge |
+| Undo partial | Partially reversed (e.g., IG deleted but cached) | Show warning + explanation |
+| Undo failed | Could not reverse (e.g., external change) | Show error + "Contact support" |
+| Undo unavailable | Cannot undo (e.g., Story posted) | No button, show explanation on hover |
+
 **Undo Limitations (surfaced in UX):**
 - Stories cannot be undone after posting
 - External caches may retain deleted content briefly
 - Coach notified when undo is partial or impossible
+- WhatsApp/web chat notifications mirror activity log states
 
 ### Silence Handling
 - If coach unresponsive for 72+ hours:
   - Pause non-critical automations
-  - Send check-in message via WhatsApp
+  - Send check-in message via WhatsApp/web chat
   - Continue only pre-approved scheduled content
   - After 7 days: Pause all automations, send email alert
 
@@ -165,13 +214,33 @@ The web portal is a lightweight companion to WhatsApp, not a full dashboard repl
 ### Phase 1: Web Portal (Account Setup)
 1. **Sign up:** Email + magic link authentication
 2. **Goal-setting:** Quick questionnaire about business goals, challenges
-3. **OAuth connections:** Link Instagram (required), Google Calendar (optional)
-4. **Phone verification:** Link WhatsApp number for chat interface
+3. **Instagram connection:** OAuth flow with **Business/Creator account requirement**
+4. **Google Calendar:** Optional OAuth connection
+5. **Phone verification:** Link WhatsApp number (or skip for web chat)
 
-### Phase 2: WhatsApp (Brand Discovery)
+### Instagram Account Requirements
+**Required:** Instagram Business or Creator account linked to a Facebook Page.
+
+**Why:** Meta Graph API only exposes historical posts, analytics, and publishing for Business/Creator accounts. Personal accounts cannot be used.
+
+**Onboarding UX:**
+- Check account type during OAuth callback
+- If personal account detected:
+  - Show educational modal: "To use Juno, you need an Instagram Business or Creator account"
+  - Link to Instagram's guide for switching account types
+  - Offer to continue setup and complete Instagram connection later
+  - Allow manual content upload as fallback for voice learning
+
+**Fallback for Voice Learning (if API unavailable):**
+- Manual upload: Coach pastes 5-10 recent captions into a form
+- Screenshot import: Coach uploads screenshots of posts (OCR extraction)
+- Website import: If coach has a website, analyze copy from there
+- Skip option: Start with generic voice, refine through feedback
+
+### Phase 2: WhatsApp/Web Chat (Brand Discovery)
 1. **Welcome message:** Juno introduces itself, confirms setup complete
 2. **Brand discovery conversation:** Tone, values, target audience (conversational, not form)
-3. **Content analysis:** Request permission to analyze recent Instagram posts
+3. **Content analysis:** If Instagram connected, analyze recent posts; otherwise use fallback data
 4. **Quick win:** Generate 3-5 sample posts, send preview links to web portal
 5. **First approval:** Coach reviews and approves/edits to train voice model
 
@@ -192,38 +261,61 @@ The web portal is a lightweight companion to WhatsApp, not a full dashboard repl
 | Backend | Next.js API Routes |
 | Database | PostgreSQL |
 | Cache/Realtime | Redis |
-| Background Jobs | Inngest (or BullMQ + separate worker) |
-| Hosting | Vercel (web) + Railway/Fly.io (workers) |
+| **Background Jobs** | **Inngest** |
+| Hosting | Vercel |
 | WhatsApp | WhatsApp Business API (direct) |
 | Payments | Stripe (subscriptions + usage metering) |
 | AI Models | Multi-provider (best-of-breed routing) |
 
-### Background Job Infrastructure (Critical)
-**Why needed:** Autonomous posting, scheduled content, token refresh, silence detection, and calendar sync all require time-based execution outside of HTTP requests.
+### Background Job Infrastructure: Inngest
+
+**Why Inngest:**
+- Zero infrastructure to manage (no Redis queues, no worker processes)
+- Built-in retries, scheduling, fan-out, and dead letter handling
+- Native TypeScript SDK, seamless Next.js integration
+- Functions run on Vercel (same deployment target)
+- Free tier (5,000 steps/month) covers MVP; Pro ($50/month) scales to 500+ coaches
+- Migration path: Functions are portable if we outgrow Inngest
 
 **Architecture:**
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Vercel Edge    │────▶│  Redis Queue    │────▶│  Worker Process │
-│  (API Routes)   │     │  (Job Storage)  │     │  (Railway/Fly)  │
+│  Vercel API     │────▶│  Inngest Cloud  │────▶│  Inngest Fn     │
+│  (send event)   │     │  (orchestrate)  │     │  (on Vercel)    │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
-**Job Types:**
-| Job | Trigger | Retry Policy |
-|-----|---------|--------------|
-| PostContent | Scheduled time reached | 3 retries, exponential backoff |
-| RefreshToken | 7 days before expiry | 5 retries over 24 hours |
-| SyncCalendar | Every 15 minutes | 3 retries |
-| CheckSilence | Daily | No retry needed |
-| SendReminder | Scheduled time | 3 retries |
-| ProcessWebhook | Instagram/WhatsApp webhook | 5 retries |
+**Job Definitions (Inngest Functions):**
+| Function | Trigger | Retry Policy |
+|----------|---------|--------------|
+| `post-content` | Scheduled time | 3 retries, exponential backoff |
+| `refresh-token` | Cron: daily, filter by expiry | 5 retries over 24 hours |
+| `sync-calendar` | Cron: every 15 minutes | 3 retries |
+| `check-silence` | Cron: daily at 9am coach timezone | No retry |
+| `send-reminder` | Scheduled time | 3 retries |
+| `process-webhook` | Event: webhook received | 5 retries |
+| `report-usage` | Cron: daily at midnight UTC | 3 retries |
+| `reconcile-billing` | Cron: weekly | 3 retries |
 
 **Failure Handling:**
-- Dead letter queue for poison jobs
-- Alert coach via WhatsApp if posting fails
-- Alert via email if WhatsApp delivery fails
-- Admin dashboard for job monitoring
+- Inngest provides built-in dead letter queue
+- Failed functions visible in Inngest dashboard
+- Alert coach via WhatsApp/email if posting fails
+- Alert via email if WhatsApp/web chat delivery fails
+
+**Cost Projection:**
+| Scale | Steps/month | Cost |
+|-------|-------------|------|
+| 10 coaches | ~2,000 | Free |
+| 50 coaches | ~10,000 | $50/mo |
+| 200 coaches | ~40,000 | $50/mo |
+| 500 coaches | ~100,000 | $100/mo |
+
+**Migration Path (if needed):**
+When Inngest costs exceed $200/mo, migrate high-volume jobs to Railway + BullMQ:
+1. Abstract job handlers behind `JobRunner` interface
+2. Keep complex workflows (multi-step, fan-out) on Inngest
+3. Move simple high-volume jobs (usage reporting) to BullMQ
 
 ### AI Model Strategy
 Route tasks to optimal model:
@@ -236,7 +328,7 @@ Route tasks to optimal model:
 ### AI Orchestration
 - Raw API calls with custom orchestration (no LangChain)
 - Custom prompt management
-- Conversation state management
+- Conversation state management (channel-agnostic: WhatsApp or web chat)
 - Tool/function definitions per task type
 
 ### Integrations (MVP)
@@ -258,6 +350,7 @@ Coach
 ├── connected_accounts[]
 ├── subscription_status
 ├── last_active_at
+├── preferred_channel (whatsapp, web_chat)
 └── created_at, updated_at
 
 Content
@@ -271,7 +364,7 @@ Content
 ├── performance_metrics (JSON)
 └── created_at, updated_at
 
-ContentRevision (NEW - for undo support)
+ContentRevision
 ├── id, content_id
 ├── version (incrementing integer)
 ├── text, media_urls[]
@@ -279,8 +372,9 @@ ContentRevision (NEW - for undo support)
 ├── created_at
 └── created_by (coach or system)
 
-ContentModeration (NEW - for sensitive content)
+ContentModeration
 ├── id, content_id
+├── revision_id (FK to ContentRevision - tracks which revision was moderated)
 ├── category (health_claim, mental_health, transformation, etc.)
 ├── confidence_score
 ├── flagged (boolean)
@@ -290,6 +384,7 @@ ContentModeration (NEW - for sensitive content)
 
 Conversation
 ├── id, coach_id
+├── channel (whatsapp, web_chat)
 ├── messages[] (role, content, timestamp)
 └── context (JSON - current task, pending actions)
 
@@ -298,6 +393,8 @@ Action
 ├── type (post, schedule, message, etc.)
 ├── payload (JSON)
 ├── status (pending, executed, undone, failed)
+├── undo_status (null, pending, complete, partial, failed)
+├── undo_error (nullable - explanation if partial/failed)
 ├── confidence_score
 ├── executed_at
 ├── undone_at
@@ -313,12 +410,14 @@ CalendarEvent
 ├── synced_at
 └── sync_status (synced, conflict, error)
 
-UsageEvent (NEW - for billing metering)
+UsageEvent
 ├── id, coach_id
 ├── action_id (FK, nullable)
 ├── event_type (post_created, ai_interaction, etc.)
-├── quantity (default 1)
+├── quantity (default 1, negative for compensating events)
 ├── billable (boolean)
+├── undo_of (FK to UsageEvent, nullable - for compensating events)
+├── undo_window_expires_at (timestamp - 1 hour after creation)
 ├── reported_to_stripe (boolean)
 ├── stripe_usage_record_id (nullable)
 └── created_at
@@ -342,7 +441,7 @@ OAuthToken
 **Base tier: $49/month**
 - Up to 30 posts/month
 - Basic scheduling
-- WhatsApp access
+- WhatsApp/web chat access
 - 1 Instagram account
 
 **Growth tier: $99/month**
@@ -356,23 +455,40 @@ OAuthToken
 - $0.10 per additional AI interaction
 
 ### Usage Metering Pipeline
+
 **Event Flow:**
-1. Action executed → Write UsageEvent to database (billable: true)
-2. If action undone → Write compensating UsageEvent (quantity: -1)
-3. Daily batch job → Aggregate unbilled events per coach
-4. Report to Stripe → Create Stripe Usage Records, mark events as reported
-5. End of billing period → Stripe calculates overages
+1. Action executed → Write UsageEvent (billable: true, undo_window_expires_at: now + 1 hour)
+2. If action undone within 1 hour → Write compensating UsageEvent (quantity: -1, undo_of: original event)
+3. If undo after 1 hour → No compensation (already past billing window)
+4. Daily batch job (`report-usage`) → Aggregate unbilled events per coach where undo_window_expires_at < now
+5. Report to Stripe → Create Stripe Usage Records, mark events as reported
+6. Weekly job (`reconcile-billing`) → Compare UsageEvent totals with Stripe records
 
 **Metering Rules:**
 - Only "posted" content counts (not drafts or scheduled)
-- Undone posts within 1 hour are not billed
+- Undone posts within 1 hour are not billed (compensating event)
 - AI interactions counted per conversation turn, not per API call
-- Failed posts are not billed
+- Failed posts are not billed (billable: false)
 
-**Reconciliation:**
-- Daily job compares UsageEvent totals with Stripe records
-- Discrepancies logged and alerted
-- Monthly reconciliation report for finance
+**Data Model Support:**
+- `undo_window_expires_at`: Timestamp when 1-hour grace period ends
+- `undo_of`: FK linking compensating event to original
+- `billable`: False for failed actions, system events
+
+**Reconciliation (weekly):**
+- Sum UsageEvents by coach for billing period
+- Compare with Stripe usage records
+- Log discrepancies > 1% to alerts channel
+- Generate monthly reconciliation report
+
+**Edge Cases:**
+| Scenario | Handling |
+|----------|----------|
+| Post succeeds, then undo within 1h | Compensating event, net zero |
+| Post succeeds, undo after 1h | No compensation, coach billed |
+| Post fails on first try | billable: false, no charge |
+| Post fails after 2 retries, succeeds on 3rd | One billable event |
+| Coach disputes charge | Support can manually create compensating event |
 
 ### Payment Implementation
 - Stripe Subscriptions for base
@@ -386,7 +502,7 @@ OAuthToken
 ### Coach-Facing Dashboard (Web Portal)
 - **Engagement metrics:** Likes, comments, shares, saves, follower growth
 - **Content performance:** Best performing posts, optimal posting times
-- **Activity log:** Everything Juno has done (with undo buttons)
+- **Activity log:** Everything Juno has done (with undo buttons and status indicators)
 - **Business metrics (future):** Leads generated, conversion tracking
 
 ### AI-Driven Insights
@@ -432,8 +548,8 @@ General AI assistants (ChatGPT, Claude)
 - Rate limiting on all API endpoints
 
 ### Token Management
-- Proactive refresh: Job runs 7 days before token expiry
-- Refresh failure: Alert coach via WhatsApp, then email
+- Proactive refresh: Inngest job runs daily, filters tokens expiring in 7 days
+- Refresh failure: Alert coach via WhatsApp/web chat, then email
 - Expired tokens: Disable automations, prompt re-auth
 - Revoked tokens: Detect via API error, disable and alert
 
@@ -450,60 +566,69 @@ General AI assistants (ChatGPT, Claude)
 |------|------------|
 | Instagram API changes/restrictions | Monitor API deprecations, build abstraction layer |
 | Coaches don't trust autonomous posting | Start with "suggest + approve" mode, build trust over time |
-| WhatsApp Business API approval delays | Apply immediately; MVP launches with web chat fallback |
+| WhatsApp Business API approval delays | Web chat fallback fully specified and built in parallel |
 | Canva API approval delays | MVP works without Canva; manual template sharing as backup |
 | Content quality inconsistent | Heavy investment in prompt engineering, feedback loops |
 | Scope creep in timeline | Strict MVP scope, defer all "nice to haves" |
 | Token expiration causes silent failures | Proactive refresh, multiple alert channels |
 | Instagram rate limits | Implement backoff, queue posts, respect limits |
+| Coach edits bypass moderation | Re-run moderation on every revision and before posting |
+| Personal IG accounts can't use API | Require Business/Creator account, provide conversion guide + fallbacks |
 
 ---
 
-## MVP Milestones (Revised: 8 Weeks)
+## MVP Milestones (8 Weeks)
 
 ### Week 1: Foundation
 - [ ] Next.js project setup with TypeScript
 - [ ] PostgreSQL + Redis setup
 - [ ] Auth system (magic link)
 - [ ] Basic data models and migrations
+- [ ] **Inngest setup and first test function**
 - [ ] **Apply for WhatsApp Business API approval** (start immediately)
 - [ ] **Apply for Canva Connect API access** (start immediately)
 
 ### Week 2: Web Portal Core
 - [ ] Web portal: signup, login, settings
-- [ ] OAuth integration: Instagram
+- [ ] OAuth integration: Instagram (with Business/Creator account check)
 - [ ] OAuth integration: Google Calendar
 - [ ] Token storage and refresh infrastructure
+- [ ] Fallback content ingestion UI (manual paste, screenshot upload)
 
 ### Week 3: Background Jobs + Scheduling
-- [ ] Inngest/BullMQ worker setup on Railway
-- [ ] Job types: PostContent, RefreshToken, SyncCalendar
+- [ ] Inngest functions: PostContent, RefreshToken, SyncCalendar
 - [ ] Content scheduling system
 - [ ] Calendar sync implementation
+- [ ] Job monitoring dashboard (Inngest provides)
 
 ### Week 4: Content Generation
 - [ ] Claude integration for content generation
-- [ ] Voice learning from existing Instagram posts
+- [ ] Voice learning from Instagram posts (or fallback data)
 - [ ] Content preview and approval flow (web portal)
-- [ ] Sensitive content detection pipeline
+- [ ] Sensitive content detection pipeline (3 checkpoints)
+- [ ] **Start web chat fallback implementation**
 
-### Week 5: WhatsApp Integration
-- [ ] WhatsApp Business API integration (or web chat fallback)
-- [ ] Conversation handling and state management
-- [ ] Deep links from WhatsApp to web portal
+### Week 5: Chat Integration
+- [ ] WhatsApp Business API integration (if approved)
+- [ ] **Web chat interface (fallback, built regardless)**
+- [ ] Conversation handling and state management (channel-agnostic)
+- [ ] Deep links from chat to web portal
 - [ ] Quick-reply buttons and proactive nudges
 
 ### Week 6: Instagram Posting + Undo
 - [ ] Instagram posting via Graph API
 - [ ] Content versioning (ContentRevision)
-- [ ] Undo functionality
+- [ ] Moderation re-check before posting
+- [ ] Undo functionality with status states
 - [ ] Posting failure handling and alerts
 
 ### Week 7: Billing + Analytics
 - [ ] Stripe subscription integration
-- [ ] Usage metering pipeline
+- [ ] Usage metering pipeline with compensating events
+- [ ] UsageEvent schema with undo tracking fields
+- [ ] Reconciliation job and tests
 - [ ] Basic analytics dashboard
-- [ ] Activity log with undo buttons
+- [ ] Activity log with undo buttons and status indicators
 
 ### Week 8: Hardening + Beta Launch
 - [ ] End-to-end testing
@@ -521,6 +646,8 @@ Week 1 ────────────────────────�
   │
   ├── Canva API Approval (background, check weekly)
   │
+  ├── Web Chat Fallback (Weeks 4-5, built regardless of WhatsApp status)
+  │
   └── Beta Coach Recruitment (start Week 4)
 ```
 
@@ -530,9 +657,10 @@ Week 1 ────────────────────────�
 
 | Integration | If Delayed | Fallback |
 |-------------|------------|----------|
-| WhatsApp Business API | Not approved by Week 5 | Launch with web-based chat interface |
+| WhatsApp Business API | Not approved by Week 5 | Web chat interface (same features, different channel) |
 | Canva Connect API | Not approved by Week 6 | Manual template links, no deep integration |
 | Instagram Graph API | Rate limited | Queue posts, reduce frequency, alert coach |
+| Instagram Business account | Coach has personal account | Conversion guide + manual content upload for voice learning |
 
 ---
 
@@ -553,15 +681,17 @@ Week 1 ────────────────────────�
 - Team workspaces (gym owners with multiple trainers)
 - White-label for coaching platforms
 - HIPAA compliance for health coaches
+- Migrate high-volume jobs to BullMQ (if Inngest costs > $200/mo)
 
 ---
 
 ## Open Questions (Updated)
 
-1. ~~**WhatsApp Business API approval:** Timeline unclear—should we have a web chat fallback for day 1?~~ **RESOLVED:** Yes, web chat fallback is part of MVP plan.
+1. ~~**WhatsApp Business API approval:** Timeline unclear—should we have a web chat fallback for day 1?~~ **RESOLVED:** Yes, web chat fallback built in parallel.
 2. ~~**Canva API access:** Requires Canva partner approval—backup plan if delayed?~~ **RESOLVED:** MVP works without Canva; manual template sharing.
-3. **Instagram posting limits:** Need to research exact rate limits and implement backoff
-4. **Beta coach recruitment:** How will we find the first 10 coaches? (Fitness influencer outreach? Paid ads? Personal network?)
+3. ~~**Worker hosting:** Inngest vs Railway vs others?~~ **RESOLVED:** Inngest for MVP, migration path to BullMQ if needed.
+4. **Instagram posting limits:** Need to research exact rate limits and implement backoff
+5. **Beta coach recruitment:** How will we find the first 10 coaches? (Fitness influencer outreach? Paid ads? Personal network?)
 
 ---
 
@@ -577,4 +707,4 @@ The MVP is successful if:
 ---
 
 *Last updated: March 2026*
-*Status: Revised after design review - Ready for implementation*
+*Status: Ready for implementation*

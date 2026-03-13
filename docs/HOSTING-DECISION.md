@@ -157,10 +157,37 @@ Vercel API → SQS Queue → Lambda Function → External APIs
 | Reliability | 15% | Missed posts = churn |
 | Portability | 5% | Can we migrate later? |
 
-## Questions for Review
+## Decision: Inngest
 
-1. Given the constraints (solo founder, 8 weeks, reliability critical), which option balances speed vs. control best?
-2. Is Inngest's pricing reasonable, or will it blow up at scale?
-3. Are there failure modes in any option that would cause silent job loss?
-4. Should we consider a hybrid (e.g., Vercel Cron for simple jobs + Railway for complex)?
-5. What's the migration path if we outgrow the initial choice?
+**Chosen option:** Inngest (managed durable execution)
+
+**Rationale:**
+1. **Time to implement (30% weight):** Inngest SDK works in hours, not days. Solo founder can't afford to build queue infrastructure.
+2. **Ops complexity (25% weight):** Zero ops - no Redis queues, no worker processes, no scaling concerns.
+3. **Reliability (15% weight):** Built-in retries, dead letter queues, and observability out of the box.
+4. **Cost (25% weight):** Free tier covers MVP (10 coaches). Pro tier ($50-100/mo) is negligible vs. revenue at 500 coaches.
+5. **Portability (5% weight):** Functions are standard TypeScript - can migrate to BullMQ later if needed.
+
+**Migration path:**
+When Inngest costs exceed $200/mo (~500+ coaches), migrate high-volume jobs to Railway + BullMQ:
+1. Abstract job handlers behind `JobRunner` interface
+2. Keep complex workflows (multi-step, fan-out) on Inngest
+3. Move simple high-volume jobs (usage reporting) to BullMQ
+
+**Cost projection:**
+| Scale | Steps/month | Cost |
+|-------|-------------|------|
+| 10 coaches | ~2,000 | Free |
+| 50 coaches | ~10,000 | $50/mo |
+| 200 coaches | ~40,000 | $50/mo |
+| 500 coaches | ~100,000 | $100/mo |
+
+---
+
+## Questions Answered
+
+1. **Which option balances speed vs. control?** Inngest - speed wins for MVP, control can come later.
+2. **Is Inngest's pricing reasonable?** Yes - at 500 coaches paying $49-99/mo, $100/mo for Inngest is <0.5% of revenue.
+3. **Silent job loss?** Inngest has built-in DLQ and observability. No silent failures.
+4. **Hybrid approach?** Not needed for MVP. Inngest handles all job types.
+5. **Migration path?** Abstract behind interface, migrate to BullMQ when costs justify.
