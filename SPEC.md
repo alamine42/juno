@@ -260,12 +260,14 @@ Moderation runs at **three checkpoints** to prevent bypass:
 | Frontend | Next.js (TypeScript) |
 | Backend | Next.js API Routes |
 | Database | PostgreSQL |
+| Vector DB | pgvector (Supabase) → Pinecone (scale) |
 | Cache/Realtime | Redis |
 | **Background Jobs** | **Inngest** |
 | Hosting | Vercel |
 | WhatsApp | WhatsApp Business API (direct) |
 | Payments | Stripe (subscriptions + usage metering) |
 | AI Models | Multi-provider (best-of-breed routing) |
+| Embeddings | OpenAI text-embedding-3-small |
 
 ### Background Job Infrastructure: Inngest
 
@@ -296,6 +298,9 @@ Moderation runs at **three checkpoints** to prevent bypass:
 | `process-webhook` | Event: webhook received | 5 retries |
 | `report-usage` | Cron: daily at midnight UTC | 3 retries |
 | `reconcile-billing` | Cron: weekly | 3 retries |
+| `consolidate-memory-daily` | Cron: daily at 2am | 3 retries |
+| `consolidate-memory-weekly` | Cron: Sunday 3am | 3 retries |
+| `detect-drift` | Cron: weekly | No retry |
 
 **Failure Handling:**
 - Inngest provides built-in dead letter queue
@@ -330,6 +335,45 @@ Route tasks to optimal model:
 - Custom prompt management
 - Conversation state management (channel-agnostic: WhatsApp or web chat)
 - Tool/function definitions per task type
+
+### Memory & Drift Prevention
+
+> Full architecture: `docs/MEMORY-ARCHITECTURE.md`
+
+Juno maintains three types of memory per coach:
+
+**Memory Types:**
+| Type | Purpose | Storage |
+|------|---------|---------|
+| Episodic | What happened (conversations, actions, feedback) | PostgreSQL + pgvector |
+| Semantic | Facts & knowledge (brand voice, preferences, rules) | PostgreSQL JSON + pgvector |
+| Procedural | Learned patterns (what content works, optimal times) | PostgreSQL metrics |
+
+**Memory Operations:**
+- **Encoding:** Store events, generate embeddings, update derived insights
+- **Retrieval:** Semantic search for relevant context before each generation
+- **Consolidation:** Daily/weekly summarization of old memories (Inngest crons)
+- **Forgetting:** Prune superseded preferences, archive old embeddings
+
+**Drift Prevention:**
+
+| Strategy | How It Works |
+|----------|--------------|
+| Voice Anchoring | Store embeddings of first approved content as "anchor"; compare new content to anchor before posting |
+| Feedback Learning | Extract lessons from coach edits; include relevant lessons in future prompts |
+| Quality Monitoring | Track approval rate, edit rate, engagement trends; alert if degradation detected |
+| Preference Versioning | Version all preferences; detect conflicts; prefer recent + explicit |
+
+**Context Window Management:**
+- Budget: ~2,400 tokens of memory context per request
+- Always include: Voice model (300), preferences (200), recent context (400)
+- Semantic retrieval: Relevant past content (500), relevant feedback (300)
+
+**Drift Detection (weekly Inngest job):**
+1. Calculate rolling quality metrics (approval rate, edit rate, engagement)
+2. Compare to baseline (first month of usage)
+3. If degradation >20%, trigger voice refresh flow
+4. Proactive check-in: "I've noticed my suggestions need more edits. Want to do a quick voice refresh?"
 
 ### Integrations (MVP)
 | Service | Method | Purpose |
@@ -430,6 +474,55 @@ OAuthToken
 ├── expires_at
 ├── refresh_attempted_at
 └── status (active, expired, revoked)
+
+Memory (episodic, semantic, procedural)
+├── id, coach_id
+├── type (episodic, semantic, procedural)
+├── category (conversation, feedback, preference, pattern)
+├── content (text)
+├── metadata (JSON)
+├── importance (float 0-1)
+├── embedding (vector 1536)
+├── expires_at (nullable)
+├── consolidated_into (FK to Memory, nullable)
+└── created_at
+
+Preference (structured semantic memory)
+├── id, coach_id
+├── category (content, scheduling, communication)
+├── key, value (JSON)
+├── source (explicit, inferred, default)
+├── confidence (float)
+├── superseded_by (FK to Preference, nullable)
+└── created_at, updated_at
+
+VoiceModel (structured semantic memory)
+├── id, coach_id
+├── version (int)
+├── tone (JSON - formality, enthusiasm, humor scores)
+├── vocabulary (JSON - preferred, avoided words)
+├── patterns (JSON - sentence length, emoji usage, etc.)
+├── anchor_embeddings (vector[] - first approved content)
+├── active (boolean)
+└── created_at
+
+Feedback (for learning from corrections)
+├── id, coach_id, content_id
+├── feedback_type (edit, approval, rejection, comment)
+├── original_text, modified_text
+├── edit_embedding (vector 1536)
+├── lesson_extracted (text - AI-derived lesson)
+└── created_at
+
+MemorySummary (consolidated memories)
+├── id, coach_id
+├── period_type (day, week, month)
+├── period_start, period_end
+├── summary (text)
+├── key_events (JSON)
+├── patterns_observed (JSON)
+├── embedding (vector 1536)
+└── created_at
 ```
 
 ---
@@ -601,11 +694,14 @@ General AI assistants (ChatGPT, Claude)
 - [ ] Calendar sync implementation
 - [ ] Job monitoring dashboard (Inngest provides)
 
-### Week 4: Content Generation
+### Week 4: Content Generation + Memory Foundation
 - [ ] Claude integration for content generation
 - [ ] Voice learning from Instagram posts (or fallback data)
 - [ ] Content preview and approval flow (web portal)
 - [ ] Sensitive content detection pipeline (3 checkpoints)
+- [ ] **Memory tables + pgvector setup**
+- [ ] **Voice model creation from onboarding**
+- [ ] **Basic embedding generation for content**
 - [ ] **Start web chat fallback implementation**
 
 ### Week 5: Chat Integration
@@ -615,12 +711,15 @@ General AI assistants (ChatGPT, Claude)
 - [ ] Deep links from chat to web portal
 - [ ] Quick-reply buttons and proactive nudges
 
-### Week 6: Instagram Posting + Undo
+### Week 6: Instagram Posting + Undo + Memory
 - [ ] Instagram posting via Graph API
 - [ ] Content versioning (ContentRevision)
 - [ ] Moderation re-check before posting
 - [ ] Undo functionality with status states
 - [ ] Posting failure handling and alerts
+- [ ] **Feedback tracking (store edits with embeddings)**
+- [ ] **Lesson extraction from coach edits**
+- [ ] **Memory retrieval in content generation prompts**
 
 ### Week 7: Billing + Analytics
 - [ ] Stripe subscription integration
@@ -635,6 +734,9 @@ General AI assistants (ChatGPT, Claude)
 - [ ] Error handling audit
 - [ ] Security review
 - [ ] Rate limiting
+- [ ] **Memory consolidation jobs (daily/weekly)**
+- [ ] **Drift detection baseline setup**
+- [ ] **Voice anchor comparison before posting**
 - [ ] Beta launch with 5-10 coaches
 - [ ] Monitoring and alerting setup
 
