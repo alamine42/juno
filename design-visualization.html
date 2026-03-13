@@ -656,6 +656,7 @@
             <div class="tab" onclick="showTab('architecture')">Architecture</div>
             <div class="tab" onclick="showTab('userflow')">User Flow</div>
             <div class="tab" onclick="showTab('datamodel')">Data Model</div>
+            <div class="tab" onclick="showTab('memory')">Memory & Drift</div>
             <div class="tab" onclick="showTab('jobs')">Background Jobs</div>
             <div class="tab" onclick="showTab('moderation')">Content Moderation</div>
             <div class="tab" onclick="showTab('pricing')">Pricing</div>
@@ -773,11 +774,11 @@
                         <div class="arch-item">GPT-4 (Tools)</div>
                         <div class="arch-item">Haiku (Classification)</div>
                     </div>
-                    <div class="arch-layer">
-                        <h4>Data</h4>
-                        <div class="arch-item">PostgreSQL</div>
-                        <div class="arch-item">Redis</div>
-                        <div class="arch-item">Vercel Blob</div>
+                    <div class="arch-layer highlight">
+                        <h4>Data (Supabase)</h4>
+                        <div class="arch-item">PostgreSQL + pgvector</div>
+                        <div class="arch-item">Supabase Realtime</div>
+                        <div class="arch-item">Redis (Upstash)</div>
                     </div>
                     <div class="arch-layer">
                         <h4>Integrations</h4>
@@ -1046,31 +1047,50 @@
         <!-- Content Moderation Tab -->
         <div id="moderation" class="tab-content">
             <div class="card">
-                <h2>Sensitive Content Detection Pipeline</h2>
+                <h2>Tiered Content Moderation</h2>
                 <div class="moderation-flow">
                     <div class="mod-step input">Generated Content</div>
                     <span class="flow-arrow">→</span>
-                    <div class="mod-step process">Keyword Scan</div>
+                    <div class="mod-step process">Classify Tier</div>
                     <span class="flow-arrow">→</span>
-                    <div class="mod-step process">LLM Classification</div>
+                    <div class="mod-step process">Check Allow-List</div>
                     <span class="flow-arrow">→</span>
-                    <div class="mod-step decision">Confidence?</div>
+                    <div class="mod-step decision">Decision</div>
                 </div>
                 <div class="moderation-flow" style="margin-top: 1rem;">
-                    <div class="mod-step output-good">High Confidence Safe → Auto-proceed</div>
-                    <div class="mod-step output-review">Any Doubt → Flag for Review</div>
+                    <div class="mod-step output-good">Green → Auto-post</div>
+                    <div class="mod-step" style="background: rgba(245, 158, 11, 0.2); border: 1px solid var(--warning);">Yellow + Attested → Auto-post</div>
+                    <div class="mod-step output-review">Red → Always Review</div>
                 </div>
             </div>
 
             <div class="card">
-                <h2>Flagged Categories</h2>
-                <div class="flow">
-                    <div class="flow-step warning">Health Claims</div>
-                    <div class="flow-step warning">Mental Health</div>
-                    <div class="flow-step warning">Before/After</div>
-                    <div class="flow-step warning">Supplements</div>
-                    <div class="flow-step warning">Injury Advice</div>
-                </div>
+                <h2>Content Tiers</h2>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <th style="text-align: left; padding: 0.75rem;">Tier</th>
+                        <th style="text-align: left; padding: 0.75rem;">Examples</th>
+                        <th style="text-align: center; padding: 0.75rem;">Auto-post?</th>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem; color: var(--secondary); font-weight: bold;">Green (Safe)</td>
+                        <td style="padding: 0.75rem;">Workout tips, motivation, scheduling</td>
+                        <td style="text-align: center; color: var(--secondary);">✓ Yes</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem; color: var(--warning); font-weight: bold;">Yellow (Coaching)</td>
+                        <td style="padding: 0.75rem;">Weight loss journey, mindset, transformations</td>
+                        <td style="text-align: center; color: var(--warning);">✓ If attested</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.75rem; color: var(--danger); font-weight: bold;">Red (Regulated)</td>
+                        <td style="padding: 0.75rem;">Medical claims, diagnoses, supplement dosing</td>
+                        <td style="text-align: center; color: var(--danger);">✗ Never</td>
+                    </tr>
+                </table>
+                <p style="margin-top: 1rem; color: var(--text-muted); font-size: 0.875rem;">
+                    <strong>Per-coach allow-lists:</strong> When coach approves Yellow content, they can allow similar content in future.
+                </p>
             </div>
 
             <div class="card">
@@ -1168,6 +1188,119 @@
             </div>
         </div>
 
+        <!-- Memory Tab -->
+        <div id="memory" class="tab-content">
+            <div class="card">
+                <h2>Memory Architecture</h2>
+                <div class="architecture">
+                    <div class="arch-layer">
+                        <h4>Episodic Memory</h4>
+                        <div class="arch-item">Conversations</div>
+                        <div class="arch-item">Actions taken</div>
+                        <div class="arch-item">Feedback received</div>
+                    </div>
+                    <div class="arch-layer highlight">
+                        <h4>Semantic Memory</h4>
+                        <div class="arch-item">Brand voice model</div>
+                        <div class="arch-item">Preferences</div>
+                        <div class="arch-item">Content rules</div>
+                    </div>
+                    <div class="arch-layer">
+                        <h4>Procedural Memory</h4>
+                        <div class="arch-item">What content works</div>
+                        <div class="arch-item">Optimal posting times</div>
+                        <div class="arch-item">Engagement patterns</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Memory Operations</h2>
+                <div class="flow">
+                    <div class="flow-step">Event occurs</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">Encode + Embed</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step">pgvector storage</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step secondary">Semantic retrieval</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step">Include in prompt</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Drift Prevention Strategies</h2>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <th style="text-align: left; padding: 0.75rem;">Strategy</th>
+                        <th style="text-align: left; padding: 0.75rem;">How It Works</th>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem; color: var(--primary);">Voice Anchoring</td>
+                        <td style="padding: 0.75rem;">Store embeddings of first 10 approved posts as "anchor"; compare new content before posting</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem; color: var(--primary);">Feedback Learning</td>
+                        <td style="padding: 0.75rem;">Extract lessons from coach edits ("prefers X over Y"); include in future prompts</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem; color: var(--primary);">Quality Monitoring</td>
+                        <td style="padding: 0.75rem;">Track approval rate, edit rate, engagement; alert if degradation > 20%</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.75rem; color: var(--primary);">Preference Versioning</td>
+                        <td style="padding: 0.75rem;">Version all preferences; detect conflicts; prefer recent + explicit</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="card">
+                <h2>Context Window Budget (~2,400 tokens)</h2>
+                <div class="stats-grid">
+                    <div class="stat">
+                        <div class="stat-value">300</div>
+                        <div class="stat-label">Voice Model</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">200</div>
+                        <div class="stat-label">Preferences</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">400</div>
+                        <div class="stat-label">Recent Context</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">500</div>
+                        <div class="stat-label">Past Content</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">300</div>
+                        <div class="stat-label">Feedback</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Consolidation Schedule (Inngest)</h2>
+                <div class="flow">
+                    <div class="flow-step">Daily 2am</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">Summarize conversations</div>
+                </div>
+                <div class="flow" style="margin-top: 1rem;">
+                    <div class="flow-step">Sunday 3am</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">Extract weekly patterns</div>
+                </div>
+                <div class="flow" style="margin-top: 1rem;">
+                    <div class="flow-step">Weekly</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step warning">Drift detection check</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Timeline Tab -->
         <div id="timeline" class="tab-content">
             <div class="card">
@@ -1193,21 +1326,21 @@
                         </ul>
                     </div>
                     <div class="timeline-item">
-                        <div class="timeline-week">Week 3: Background Jobs (Inngest)</div>
+                        <div class="timeline-week">Week 3: Jobs + Vector Infrastructure</div>
                         <ul class="timeline-tasks">
-                            <li>Inngest SDK setup + first test function</li>
-                            <li>Functions: post-content, refresh-token, sync-calendar</li>
+                            <li>Inngest functions: post-content, refresh-token, sync-calendar</li>
+                            <li>pgvector extension + embedding pipeline</li>
+                            <li>Supabase Realtime for web chat</li>
                             <li>Content scheduling system</li>
-                            <li>Calendar sync implementation</li>
                         </ul>
                     </div>
                     <div class="timeline-item">
-                        <div class="timeline-week">Week 4: Content Generation</div>
+                        <div class="timeline-week">Week 4: Content Generation + Memory</div>
                         <ul class="timeline-tasks">
-                            <li>Claude integration for content generation</li>
-                            <li>Voice learning from existing posts</li>
-                            <li>Content preview and approval flow</li>
-                            <li>Sensitive content detection pipeline</li>
+                            <li>Claude integration + voice learning</li>
+                            <li>Tiered moderation (Green/Yellow/Red)</li>
+                            <li>Voice model + anchor embeddings</li>
+                            <li>Degraded mode for personal IG accounts</li>
                         </ul>
                     </div>
                     <div class="timeline-item">
