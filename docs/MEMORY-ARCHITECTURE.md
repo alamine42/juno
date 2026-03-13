@@ -441,47 +441,65 @@ async function buildMemoryContext(
 
 ## Implementation Plan
 
-### MVP (Week 4-5)
+### Week 3: Vector Infrastructure
+**pgvector from day one** (required for voice anchoring and drift detection)
 
-**Simple memory, foundation for advanced:**
+1. **pgvector setup** (Supabase includes this)
+   - Enable pgvector extension
+   - Create embedding columns on Memory, Feedback, VoiceModel tables
+   - Set up embedding generation pipeline
 
-1. **PostgreSQL only** (no vector DB yet)
-   - Store conversations, actions, feedback
-   - Store brand voice as JSON
-   - Store preferences as key-value
+2. **Embedding generation**
+   - OpenAI text-embedding-3-small integration
+   - Generate embeddings on content creation
+   - Batch embed existing Instagram posts during onboarding
 
-2. **Basic retrieval**
-   - Last 10 conversations in context
-   - Full brand voice model in every prompt
-   - All active preferences in context
+### Week 4-5: Core Memory
 
-3. **Simple feedback loop**
-   - Track when coach edits content
-   - Store edit diffs
-   - Manual review of patterns (no automation)
+1. **Memory storage**
+   - Store conversations, actions, feedback with embeddings
+   - Store brand voice as JSON + anchor embeddings
+   - Store preferences as key-value with versioning
 
-### Post-MVP (Phase 2)
+2. **Voice anchoring**
+   - Embed first 10 approved content pieces as anchor
+   - Compare new content to anchor before posting
+   - Flag if similarity < 0.7
 
-**Add vector DB and semantic retrieval:**
+3. **Basic retrieval**
+   - Semantic search for relevant past content
+   - Full voice model in every prompt
+   - Recent context (last 24h) always included
 
-1. **pgvector integration**
-   - Embed all content, conversations, feedback
-   - Semantic search for relevant context
+### Week 6: Feedback Learning
 
-2. **Automated feedback learning**
+1. **Edit tracking**
+   - Store original vs. edited content with embeddings
    - LLM extracts lessons from edits
-   - Lessons included in prompts automatically
+   - Lessons included in future prompts
 
-3. **Consolidation jobs**
-   - Daily/weekly memory summaries
-   - Prune old embeddings
+2. **Quality monitoring**
+   - Track approval rate, edit rate
+   - Establish baseline metrics
 
-### Scale (Phase 3)
+### Week 8: Drift Detection & Consolidation
+
+1. **Consolidation jobs** (Inngest crons)
+   - Daily conversation summaries
+   - Weekly pattern extraction
+   - Archive old embeddings (>6 months)
+
+2. **Drift detection**
+   - Compare rolling metrics to baseline
+   - Alert if degradation > 20%
+   - Trigger voice refresh flow if needed
+
+### Scale (Phase 2+)
 
 **Full memory system:**
 
-1. **Migrate to Pinecone** (if pgvector slow)
-2. **Advanced drift detection**
+1. **Migrate to Pinecone** (if pgvector slow at 500+ coaches)
+2. **Advanced drift detection** (multi-signal)
 3. **Proactive voice refresh flows**
 4. **Cross-coach pattern learning** (anonymized)
 

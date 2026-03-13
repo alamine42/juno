@@ -114,15 +114,24 @@ If WhatsApp Business API approval is delayed, the web portal includes a native c
 - Push notifications for scheduled post confirmations
 
 **Technical Implementation:**
-- WebSocket connection for real-time messaging
+- **Supabase Realtime** for real-time messaging (Vercel serverless can't hold WebSockets)
+- Postgres LISTEN/NOTIFY via Supabase subscription
 - Same conversation state model as WhatsApp
 - Same AI orchestration layer (channel-agnostic)
 - Notification opt-in during onboarding
+
+**Why Supabase Realtime (not WebSockets):**
+- Vercel serverless functions can't maintain WebSocket connections
+- Supabase Realtime is included with our Postgres (Supabase) setup
+- Client subscribes to `conversations` table changes
+- API route writes message → triggers Supabase Realtime → client receives
+- Fallback: Long-polling with 3-second intervals if Realtime fails
 
 **UX Differences from WhatsApp:**
 - Coach must open browser (no push to locked phone)
 - Browser notifications less reliable than WhatsApp
 - No voice messages (WhatsApp supports, web chat doesn't)
+- Slight latency increase vs. WhatsApp (~500ms vs. instant)
 
 ---
 
@@ -140,6 +149,11 @@ If WhatsApp Business API approval is delayed, the web portal includes a native c
 - Content mentioning specific clients by name
 
 ### Sensitive Content Detection & Handling
+
+**The Problem:** Coaches in fitness/wellness/mindset regularly discuss weight, mental health, transformations—this is their job. Blanket flagging would block most content and negate autonomy.
+
+**Solution:** Tiered moderation with per-coach allow-lists.
+
 **Detection Pipeline:**
 
 Moderation runs at **three checkpoints** to prevent bypass:
@@ -147,25 +161,49 @@ Moderation runs at **three checkpoints** to prevent bypass:
 2. **On every revision:** When `Content.current_revision_id` changes (coach edits)
 3. **Immediately before posting:** Final gate in the PostContent job
 
+**Tiered Classification:**
+| Tier | Examples | Auto-post? |
+|------|----------|------------|
+| **Green (Safe)** | Workout tips, motivation, scheduling | Yes |
+| **Yellow (Coaching)** | Weight loss journey, mindset shifts, transformations, general wellness | Yes, if coach has attested* |
+| **Red (Regulated)** | Medical claims ("cures X"), specific diagnoses, supplement dosing, injury treatment | Never - always require approval |
+
+*Coach attestation: During onboarding, coaches attest: "I understand I'm responsible for compliance with health/advertising regulations in my content."
+
 **Detection Steps:**
-1. **Keyword/regex scan:** Flag terms like "weight loss", "cure", "treatment", "anxiety", "depression", mental health terms
-2. **LLM classification:** Claude Haiku classifies content as sensitive/not-sensitive with confidence score
-3. **Decision logic:**
-   - High confidence not-sensitive: Proceed with normal autonomy rules
-   - Any other result: Flag for coach review, never auto-post
-4. **Store classification:** Log category, confidence, decision, and **revision_id** in ContentModeration table
+1. **Keyword/regex scan:** Categorize content into Green/Yellow/Red tiers
+2. **LLM classification:** Claude Haiku refines tier + identifies specific concerns
+3. **Per-coach allow-list check:** Has coach approved this topic category before?
+4. **Decision logic:**
+   - Green: Auto-post per normal autonomy rules
+   - Yellow + attested + no specific red flags: Auto-post
+   - Yellow + not attested: Flag for review, offer attestation
+   - Red: Always flag, require explicit approval
+5. **Store classification:** Log tier, category, confidence, decision, and **revision_id**
+
+**Per-Coach Topic Allow-Lists:**
+- When coach approves a Yellow-tier post, offer: "Allow similar content in the future?"
+- Store approved categories: `["weight_loss_journey", "mindset", "transformations"]`
+- Future Yellow content in allowed categories → auto-post
+
+**Red-Tier (Always Blocked) Examples:**
+- "This supplement cures anxiety"
+- "Do this exercise to fix your herniated disc"
+- "I guarantee you'll lose 20 lbs"
+- Specific medical/psychiatric diagnoses
+- Before/after with specific weight claims
+
+**Yellow-Tier (Coachable) Examples:**
+- "My client's transformation journey"
+- "Struggling with motivation? Here's what helped me..."
+- "Nutrition tips for busy professionals"
+- "The mental game of fitness"
 
 **Posting Gate:**
-- PostContent job compares `ContentModeration.revision_id` with `Content.current_revision_id`
-- If mismatch: Re-run moderation before posting
-- If flagged: Block posting, notify coach, require explicit approval
-
-**Categories flagged:**
-- Health claims (nutrition, weight, medical)
-- Mental health topics
-- Before/after transformations
-- Supplement recommendations
-- Injury/pain advice
+- PostContent job checks tier + attestation + allow-list
+- If Red: Block, notify coach, require explicit approval
+- If Yellow without attestation: Block, request attestation
+- If mismatch in revision: Re-run classification
 
 ### Recovery & Audit Trail
 **Versioned Content Model:**
@@ -219,17 +257,40 @@ Moderation runs at **three checkpoints** to prevent bypass:
 5. **Phone verification:** Link WhatsApp number (or skip for web chat)
 
 ### Instagram Account Requirements
-**Required:** Instagram Business or Creator account linked to a Facebook Page.
+**Required for full features:** Instagram Business or Creator account linked to a Facebook Page.
 
-**Why:** Meta Graph API only exposes historical posts, analytics, and publishing for Business/Creator accounts. Personal accounts cannot be used.
+**Why:** Meta Graph API only exposes historical posts, analytics, and publishing for Business/Creator accounts. Personal accounts cannot be used for auto-posting.
+
+**Account State Machine:**
+| State | Can Auto-Post? | Can Get Analytics? | Voice Learning | Available Features |
+|-------|---------------|-------------------|----------------|-------------------|
+| **Business/Creator** | Yes | Yes | From API | Full autonomy |
+| **Personal (connected)** | No | No | Manual upload | Content generation + reminders |
+| **Not connected** | No | No | Manual upload | Content generation only |
+
+**Degraded Mode (Personal Account):**
+Coaches with personal accounts can still get value:
+
+1. **Content generation:** Juno creates posts, captions, scripts
+2. **Copy-paste workflow:** Juno sends ready-to-post content via WhatsApp/web chat
+3. **Posting reminders:** "Time to post! Here's your content: [text] - Copy and paste to Instagram"
+4. **Manual performance tracking:** Coach tells Juno how posts performed
+5. **Calendar/scheduling:** Plan content calendar, get reminders (no auto-post)
+
+**Degraded Mode UX:**
+- Clear visual indicator in web portal: "Upgrade to Business account for auto-posting"
+- WhatsApp messages include: "[Copy to Instagram]" button with pre-formatted text
+- Weekly nudge: "Upgrade to Business account to unlock auto-posting"
+- Track conversion rate from degraded → full mode
 
 **Onboarding UX:**
 - Check account type during OAuth callback
 - If personal account detected:
-  - Show educational modal: "To use Juno, you need an Instagram Business or Creator account"
+  - Show educational modal: "Juno works best with Business/Creator accounts"
+  - Explain what they CAN do (generation, reminders) vs. CAN'T (auto-post)
   - Link to Instagram's guide for switching account types
-  - Offer to continue setup and complete Instagram connection later
-  - Allow manual content upload as fallback for voice learning
+  - Allow them to continue in degraded mode (don't block activation)
+  - Allow manual content upload for voice learning
 
 **Fallback for Voice Learning (if API unavailable):**
 - Manual upload: Coach pastes 5-10 recent captions into a form
@@ -259,9 +320,10 @@ Moderation runs at **three checkpoints** to prevent bypass:
 |-------|------------|
 | Frontend | Next.js (TypeScript) |
 | Backend | Next.js API Routes |
-| Database | PostgreSQL |
-| Vector DB | pgvector (Supabase) → Pinecone (scale) |
-| Cache/Realtime | Redis |
+| Database | PostgreSQL (Supabase) |
+| Vector DB | pgvector (included in Supabase) → Pinecone (scale) |
+| Realtime | Supabase Realtime (for web chat) |
+| Cache | Redis (Upstash) |
 | **Background Jobs** | **Inngest** |
 | Hosting | Vercel |
 | WhatsApp | WhatsApp Business API (direct) |
@@ -392,6 +454,10 @@ Coach
 ├── brand_voice (JSON - tone, values, vocabulary)
 ├── business_goals (JSON)
 ├── connected_accounts[]
+├── instagram_account_type (business, creator, personal, null)
+├── content_attestation (boolean - attested to compliance responsibility)
+├── content_attestation_at (timestamp)
+├── topic_allow_list (JSON array - ["weight_loss_journey", "mindset", ...])
 ├── subscription_status
 ├── last_active_at
 ├── preferred_channel (whatsapp, web_chat)
@@ -688,21 +754,25 @@ General AI assistants (ChatGPT, Claude)
 - [ ] Token storage and refresh infrastructure
 - [ ] Fallback content ingestion UI (manual paste, screenshot upload)
 
-### Week 3: Background Jobs + Scheduling
+### Week 3: Background Jobs + Vector Infrastructure
 - [ ] Inngest functions: PostContent, RefreshToken, SyncCalendar
 - [ ] Content scheduling system
 - [ ] Calendar sync implementation
+- [ ] **pgvector extension enabled in Supabase**
+- [ ] **Embedding generation pipeline (OpenAI text-embedding-3-small)**
+- [ ] **Supabase Realtime setup for web chat**
 - [ ] Job monitoring dashboard (Inngest provides)
 
-### Week 4: Content Generation + Memory Foundation
+### Week 4: Content Generation + Memory
 - [ ] Claude integration for content generation
 - [ ] Voice learning from Instagram posts (or fallback data)
 - [ ] Content preview and approval flow (web portal)
-- [ ] Sensitive content detection pipeline (3 checkpoints)
-- [ ] **Memory tables + pgvector setup**
-- [ ] **Voice model creation from onboarding**
-- [ ] **Basic embedding generation for content**
-- [ ] **Start web chat fallback implementation**
+- [ ] **Tiered moderation (Green/Yellow/Red) + attestation flow**
+- [ ] **Per-coach topic allow-lists**
+- [ ] **Memory tables (using pgvector from Week 3)**
+- [ ] **Voice model creation + anchor embeddings**
+- [ ] **Start web chat fallback (using Supabase Realtime from Week 3)**
+- [ ] **Degraded mode for personal IG accounts**
 
 ### Week 5: Chat Integration
 - [ ] WhatsApp Business API integration (if approved)
