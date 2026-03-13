@@ -779,6 +779,7 @@
                         <h4>Data (Supabase)</h4>
                         <div class="arch-item">PostgreSQL + pgvector</div>
                         <div class="arch-item">Supabase Realtime</div>
+                        <div class="arch-item">Supabase Storage</div>
                         <div class="arch-item">Redis (Upstash)</div>
                     </div>
                     <div class="arch-layer">
@@ -803,6 +804,40 @@
                     <div class="flow-step primary">AI Orchestrator</div>
                     <span class="flow-arrow">→</span>
                     <div class="flow-step secondary">Execute Action</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Real-Time Chat (Normalized Messages)</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    Conversations normalized into Conversation + ConversationMessage tables for scalability.
+                </p>
+                <div class="flow">
+                    <div class="flow-step">API Writes Message</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">INSERT to<br>ConversationMessage</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step secondary">Supabase Realtime<br><small>(streams INSERTs)</small></div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step">Client Receives</div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+                    <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); padding: 0.75rem; border-radius: 0.5rem;">
+                        <strong style="color: var(--danger);">Before (JSON Array)</strong>
+                        <ul style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; padding-left: 1rem;">
+                            <li>Rewrite entire history on each message</li>
+                            <li>Race conditions on concurrent writes</li>
+                            <li>Row size limits hit quickly</li>
+                        </ul>
+                    </div>
+                    <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid var(--secondary); padding: 0.75rem; border-radius: 0.5rem;">
+                        <strong style="color: var(--secondary);">After (Normalized)</strong>
+                        <ul style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; padding-left: 1rem;">
+                            <li>Append-only inserts</li>
+                            <li>No race conditions</li>
+                            <li>Supports GDPR "forget" via deleted_at</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>
@@ -943,14 +978,50 @@
                     </div>
 
                     <div class="entity">
-                        <div class="entity-header new">UsageEvent (NEW)</div>
+                        <div class="entity-header new">UsageEvent (UPDATED)</div>
                         <div class="entity-fields">
                             <div class="field"><span class="field-name">id</span><span class="field-type">uuid</span></div>
                             <div class="field"><span class="field-name">coach_id</span><span class="field-type">fk</span></div>
                             <div class="field"><span class="field-name">event_type</span><span class="field-type">enum</span></div>
                             <div class="field"><span class="field-name">quantity</span><span class="field-type">int</span></div>
                             <div class="field"><span class="field-name">billable</span><span class="field-type">bool</span></div>
-                            <div class="field"><span class="field-name">reported_to_stripe</span><span class="field-type">bool</span></div>
+                            <div class="field"><span class="field-name">reporting_status</span><span class="field-type">enum</span></div>
+                            <div class="field"><span class="field-name">idempotency_key</span><span class="field-type">uuid</span></div>
+                        </div>
+                    </div>
+
+                    <div class="entity">
+                        <div class="entity-header new">Conversation (UPDATED)</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">id</span><span class="field-type">uuid</span></div>
+                            <div class="field"><span class="field-name">coach_id</span><span class="field-type">fk</span></div>
+                            <div class="field"><span class="field-name">channel</span><span class="field-type">enum</span></div>
+                            <div class="field"><span class="field-name">started_at</span><span class="field-type">timestamp</span></div>
+                            <div class="field"><span class="field-name">context</span><span class="field-type">json</span></div>
+                        </div>
+                    </div>
+
+                    <div class="entity">
+                        <div class="entity-header new">ConversationMessage (NEW)</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">id</span><span class="field-type">uuid</span></div>
+                            <div class="field"><span class="field-name">conversation_id</span><span class="field-type">fk</span></div>
+                            <div class="field"><span class="field-name">role</span><span class="field-type">enum</span></div>
+                            <div class="field"><span class="field-name">content</span><span class="field-type">text</span></div>
+                            <div class="field"><span class="field-name">metadata</span><span class="field-type">json</span></div>
+                            <div class="field"><span class="field-name">deleted_at</span><span class="field-type">timestamp?</span></div>
+                        </div>
+                    </div>
+
+                    <div class="entity">
+                        <div class="entity-header new">CalendarEvent (UPDATED)</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">id</span><span class="field-type">uuid</span></div>
+                            <div class="field"><span class="field-name">external_id</span><span class="field-type">string</span></div>
+                            <div class="field"><span class="field-name">etag</span><span class="field-type">string</span></div>
+                            <div class="field"><span class="field-name">sync_status</span><span class="field-type">enum</span></div>
+                            <div class="field"><span class="field-name">conflict_data</span><span class="field-type">json?</span></div>
+                            <div class="field"><span class="field-name">resolved_at</span><span class="field-type">timestamp?</span></div>
                         </div>
                     </div>
                 </div>
@@ -979,14 +1050,10 @@
                 <h2>Inngest Functions</h2>
                 <div class="pipeline">
                     <div class="pipeline-stage">
-                        <h4>Scheduled</h4>
+                        <h4>Scheduled Posts</h4>
                         <div class="job-card">
                             <strong>post-content</strong>
                             <div class="retry">3 retries, exp backoff</div>
-                        </div>
-                        <div class="job-card">
-                            <strong>send-reminder</strong>
-                            <div class="retry">3 retries</div>
                         </div>
                     </div>
                     <div class="pipeline-stage">
@@ -999,9 +1066,20 @@
                             <strong>sync-calendar</strong>
                             <div class="retry">Every 15min</div>
                         </div>
+                        <div class="job-card" style="border-color: var(--secondary);">
+                            <strong>scheduler-sweep</strong>
+                            <div class="retry">Hourly (UTC) - triggers per-coach events</div>
+                        </div>
+                    </div>
+                    <div class="pipeline-stage">
+                        <h4>Per-Coach Events</h4>
                         <div class="job-card">
                             <strong>check-silence</strong>
-                            <div class="retry">Daily 9am</div>
+                            <div class="retry">via scheduler-sweep</div>
+                        </div>
+                        <div class="job-card">
+                            <strong>send-reminder</strong>
+                            <div class="retry">via inngest.send({ runAt })</div>
                         </div>
                     </div>
                     <div class="pipeline-stage">
@@ -1041,6 +1119,58 @@
                     <div class="flow-step">Dead Letter Queue</div>
                     <span class="flow-arrow">→</span>
                     <div class="flow-step secondary">Alert Coach</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Calendar Conflict Resolution</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    Never silently overwrite client sessions. Use ETags for conflict detection.
+                </p>
+                <div class="flow">
+                    <div class="flow-step">Sync Calendar</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step">Fetch with ETag</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step warning">Detect Overlap?</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step" style="border-color: var(--danger);">Hold Pending</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step secondary">Coach Resolves</div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1rem;">
+                    <div style="background: var(--bg); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong style="color: var(--secondary);">Keep Mine</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">Ignore external change</div>
+                    </div>
+                    <div style="background: var(--bg); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong style="color: var(--primary);">Accept External</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">Use Google Calendar version</div>
+                    </div>
+                    <div style="background: var(--bg); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong style="color: var(--warning);">Merge</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">Shift times to fit both</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Per-Coach Timezone Scheduling</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    Inngest crons run globally (UTC). Per-coach scheduling uses hourly sweep + runAt events.
+                </p>
+                <div class="flow">
+                    <div class="flow-step">scheduler-sweep<br><small>(hourly UTC)</small></div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step">Calculate Local Times</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">inngest.send()<br><small>{ runAt: UTC timestamp }</small></div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step secondary">Per-Coach Event</div>
+                </div>
+                <div style="margin-top: 1rem; padding: 1rem; background: var(--bg); border-radius: 0.5rem; font-size: 0.875rem;">
+                    <strong>Example:</strong> Coach in PST approves post for "Tuesday 9am" →
+                    Calculate UTC timestamp → <code>inngest.send({ runAt: "2026-03-17T17:00:00Z" })</code>
                 </div>
             </div>
         </div>
@@ -1174,17 +1304,24 @@
             </div>
 
             <div class="card">
-                <h2>Usage Metering Flow</h2>
+                <h2>Usage Metering Flow (Idempotent)</h2>
                 <div class="flow">
                     <div class="flow-step">Action Executed</div>
                     <span class="flow-arrow">→</span>
-                    <div class="flow-step">Write UsageEvent</div>
+                    <div class="flow-step">Write UsageEvent<br><small>(status: pending)</small></div>
                     <span class="flow-arrow">→</span>
-                    <div class="flow-step primary">Daily Batch</div>
+                    <div class="flow-step warning">Mark: reporting</div>
                     <span class="flow-arrow">→</span>
-                    <div class="flow-step secondary">Report to Stripe</div>
+                    <div class="flow-step primary">Stripe API<br><small>(idempotency_key)</small></div>
                     <span class="flow-arrow">→</span>
-                    <div class="flow-step">Invoice</div>
+                    <div class="flow-step secondary">Mark: reported</div>
+                </div>
+                <div style="margin-top: 1rem; padding: 1rem; background: var(--bg); border-radius: 0.5rem;">
+                    <h4 style="color: var(--secondary); margin-bottom: 0.5rem;">Retry Safety</h4>
+                    <p style="color: var(--text-muted); font-size: 0.875rem;">
+                        Uses <code>idempotency_key</code> (event UUID) to prevent double-charging on job retries.
+                        Events marked "reporting" before API call, "reported" after success, "failed" on error.
+                    </p>
                 </div>
             </div>
         </div>
