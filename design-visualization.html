@@ -657,6 +657,7 @@
             <div class="tab" onclick="showTab('userflow')">User Flow</div>
             <div class="tab" onclick="showTab('datamodel')">Data Model</div>
             <div class="tab" onclick="showTab('memory')">Memory & Drift</div>
+            <div class="tab" onclick="showTab('knowledge')">Knowledge Base</div>
             <div class="tab" onclick="showTab('jobs')">Background Jobs</div>
             <div class="tab" onclick="showTab('moderation')">Content Moderation</div>
             <div class="tab" onclick="showTab('pricing')">Pricing</div>
@@ -1297,6 +1298,170 @@
                     <div class="flow-step">Weekly</div>
                     <span class="flow-arrow">→</span>
                     <div class="flow-step warning">Drift detection check</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Knowledge Base Tab -->
+        <div id="knowledge" class="tab-content">
+            <div class="card">
+                <h2>Knowledge Base Overview</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem;">
+                    Coaches share files, notes, and structured data with Juno. The knowledge base serves as Juno's reference library for content generation.
+                </p>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 1rem 0;">
+                    <div class="arch-layer">
+                        <h4>Quick Notes</h4>
+                        <div class="arch-item">"My sign-off is 'Keep pushing!'"</div>
+                        <div class="arch-item">"Never mention competitor XYZ"</div>
+                    </div>
+                    <div class="arch-layer">
+                        <h4>Documents</h4>
+                        <div class="arch-item">Brand Guidelines (PDF)</div>
+                        <div class="arch-item">Program Descriptions</div>
+                    </div>
+                    <div class="arch-layer">
+                        <h4>Media Assets</h4>
+                        <div class="arch-item">Logos (PNG, SVG)</div>
+                        <div class="arch-item">Client Photos</div>
+                    </div>
+                    <div class="arch-layer">
+                        <h4>Structured Data</h4>
+                        <div class="arch-item">Clients</div>
+                        <div class="arch-item">Programs</div>
+                        <div class="arch-item">Testimonials</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Auto-Context Retrieval Pipeline</h2>
+                <div class="flow">
+                    <div class="flow-step">Task Analysis</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step">Query KB</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step warning">Consent Filter</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step">Rank & Filter</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">Include in Prompt</div>
+                </div>
+                <h3>Consent Filter (Critical for Content Generation)</h3>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <th style="text-align: left; padding: 0.75rem; color: var(--text-muted);">Item Type</th>
+                        <th style="text-align: center; padding: 0.75rem; color: var(--text-muted);">usable_in_content</th>
+                        <th style="text-align: center; padding: 0.75rem; color: var(--text-muted);">contains_client_pii</th>
+                        <th style="text-align: center; padding: 0.75rem; color: var(--text-muted);">requires_approval</th>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem;">Brand assets</td>
+                        <td style="text-align: center; padding: 0.75rem; color: var(--secondary);">✓</td>
+                        <td style="text-align: center; padding: 0.75rem; color: var(--text-muted);">—</td>
+                        <td style="text-align: center; padding: 0.75rem; color: var(--text-muted);">—</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem;">Programs</td>
+                        <td style="text-align: center; padding: 0.75rem; color: var(--secondary);">✓</td>
+                        <td style="text-align: center; padding: 0.75rem; color: var(--text-muted);">—</td>
+                        <td style="text-align: center; padding: 0.75rem; color: var(--text-muted);">—</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem;">Client records</td>
+                        <td style="text-align: center; padding: 0.75rem; color: var(--danger);">✗</td>
+                        <td style="text-align: center; padding: 0.75rem; color: var(--warning);">✓</td>
+                        <td style="text-align: center; padding: 0.75rem; color: var(--warning);">✓</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem;">Testimonials</td>
+                        <td style="text-align: center; padding: 0.75rem; color: var(--secondary);">✓</td>
+                        <td style="text-align: center; padding: 0.75rem; color: var(--warning);">✓</td>
+                        <td style="text-align: center; padding: 0.75rem; color: var(--warning);">✓ (unless approved)</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.75rem;">Transformation photos</td>
+                        <td style="text-align: center; padding: 0.75rem; color: var(--secondary);">✓</td>
+                        <td style="text-align: center; padding: 0.75rem; color: var(--warning);">✓</td>
+                        <td style="text-align: center; padding: 0.75rem; color: var(--warning);">✓</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="card">
+                <h2>Upload Flows</h2>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                    <div>
+                        <h3>Via WhatsApp/Web Chat</h3>
+                        <div style="background: var(--bg); border-radius: 0.5rem; padding: 1rem; margin-top: 0.5rem; font-family: monospace; font-size: 0.875rem;">
+                            <div style="color: var(--text-muted);">Coach sends image...</div>
+                            <div style="color: var(--primary); margin-top: 0.5rem;">Juno: What is this image?</div>
+                            <div style="color: var(--secondary); margin-top: 0.25rem;">[Logo] [Client photo] [Product]</div>
+                            <div style="color: var(--text); margin-top: 0.5rem;">Coach: [Logo]</div>
+                            <div style="color: var(--primary); margin-top: 0.5rem;">Juno: ✓ Saved as your logo</div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3>Via Web Portal</h3>
+                        <div style="background: var(--bg); border-radius: 0.5rem; padding: 1rem; margin-top: 0.5rem; font-size: 0.875rem;">
+                            <div style="border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;">📁 Brand Assets (3 files)</div>
+                            <div style="border-bottom: 1px solid var(--border); padding: 0.5rem 0;">📁 Programs (2 files)</div>
+                            <div style="border-bottom: 1px solid var(--border); padding: 0.5rem 0;">👤 Clients (12 records)</div>
+                            <div style="padding-top: 0.5rem;">📝 Quick Notes (5 items)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Data Model</h2>
+                <div class="data-model">
+                    <div class="entity">
+                        <div class="entity-header new">KnowledgeItem</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">type</span><span class="field-type">note | document | media</span></div>
+                            <div class="field"><span class="field-name">category</span><span class="field-type">brand | client | program</span></div>
+                            <div class="field"><span class="field-name">content</span><span class="field-type">TEXT</span></div>
+                            <div class="field"><span class="field-name">embedding</span><span class="field-type">vector(1536)</span></div>
+                            <div class="field"><span class="field-name">usable_in_content</span><span class="field-type">BOOLEAN</span></div>
+                            <div class="field"><span class="field-name">contains_client_pii</span><span class="field-type">BOOLEAN</span></div>
+                            <div class="field"><span class="field-name">requires_explicit_approval</span><span class="field-type">BOOLEAN</span></div>
+                            <div class="field"><span class="field-name">pinned</span><span class="field-type">BOOLEAN</span></div>
+                        </div>
+                    </div>
+                    <div class="entity">
+                        <div class="entity-header new">Client</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">name</span><span class="field-type">VARCHAR</span></div>
+                            <div class="field"><span class="field-name">email, phone</span><span class="field-type">VARCHAR</span></div>
+                            <div class="field"><span class="field-name">goals, challenges</span><span class="field-type">TEXT</span></div>
+                            <div class="field"><span class="field-name">preferences</span><span class="field-type">JSONB</span></div>
+                            <div class="field"><span class="field-name">status</span><span class="field-type">active | paused | completed</span></div>
+                            <div class="field"><span class="field-name">embedding</span><span class="field-type">vector(1536)</span></div>
+                        </div>
+                    </div>
+                    <div class="entity">
+                        <div class="entity-header new">Program</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">name</span><span class="field-type">VARCHAR</span></div>
+                            <div class="field"><span class="field-name">description</span><span class="field-type">TEXT</span></div>
+                            <div class="field"><span class="field-name">duration</span><span class="field-type">VARCHAR</span></div>
+                            <div class="field"><span class="field-name">price, currency</span><span class="field-type">DECIMAL, VARCHAR</span></div>
+                            <div class="field"><span class="field-name">includes</span><span class="field-type">TEXT[]</span></div>
+                            <div class="field"><span class="field-name">embedding</span><span class="field-type">vector(1536)</span></div>
+                        </div>
+                    </div>
+                    <div class="entity">
+                        <div class="entity-header new">Testimonial</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">client_name</span><span class="field-type">VARCHAR</span></div>
+                            <div class="field"><span class="field-name">content, result</span><span class="field-type">TEXT</span></div>
+                            <div class="field"><span class="field-name">program_id</span><span class="field-type">FK</span></div>
+                            <div class="field"><span class="field-name">image_path, video_path</span><span class="field-type">VARCHAR</span></div>
+                            <div class="field"><span class="field-name">approved_for_posting</span><span class="field-type">BOOLEAN</span></div>
+                            <div class="field"><span class="field-name">embedding</span><span class="field-type">vector(1536)</span></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

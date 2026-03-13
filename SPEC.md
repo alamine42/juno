@@ -59,8 +59,22 @@ Create space and time for coaches to do what they do best—coach—by automatin
 - Store coach timezone explicitly (IANA format, e.g., "America/New_York")
 - All scheduled times stored in UTC, converted to local for display
 - DST transitions: Re-calculate scheduled times on DST change, notify coach of shifts
-- Calendar sync conflicts: Last-write-wins with notification to coach
 - Token expiration: Proactive refresh 7 days before expiry, alert if refresh fails
+
+**Per-Coach Timezone Scheduling:**
+- Inngest crons run globally (UTC), not per-timezone
+- `scheduler-sweep` job runs hourly, calculates which coaches need actions based on local time
+- For per-coach events (reminders, silence checks): Use `inngest.send()` with `runAt` timestamp
+- Content posts: Schedule as one-off Inngest events with exact UTC timestamp when content is approved
+- Example: Coach in PST approves post for "Tuesday 9am" → Calculate UTC timestamp → `inngest.send({ runAt: utcTimestamp })`
+
+**Calendar Sync Conflict Resolution:**
+- Fetch current calendar state with ETags before writing
+- Detect overlaps between incoming changes and existing events
+- Conflict states: `synced`, `pending_review`, `conflict_detected`, `error`
+- On conflict: Hold pending changes, surface in WhatsApp/portal as "needs attention"
+- Coach resolves: "Keep mine", "Accept external", or "Merge" (shift times)
+- Never silently overwrite client sessions
 
 **Not in MVP:**
 - Client booking/payment
@@ -123,8 +137,9 @@ If WhatsApp Business API approval is delayed, the web portal includes a native c
 **Why Supabase Realtime (not WebSockets):**
 - Vercel serverless functions can't maintain WebSocket connections
 - Supabase Realtime is included with our Postgres (Supabase) setup
-- Client subscribes to `conversations` table changes
+- Client subscribes to `conversation_messages` table INSERT events (append-only)
 - API route writes message → triggers Supabase Realtime → client receives
+- Lightweight: Only new messages streamed, not entire conversation history
 - Fallback: Long-polling with 3-second intervals if Realtime fails
 
 **UX Differences from WhatsApp:**
@@ -355,7 +370,8 @@ Coaches with personal accounts can still get value:
 | `post-content` | Scheduled time | 3 retries, exponential backoff |
 | `refresh-token` | Cron: daily, filter by expiry | 5 retries over 24 hours |
 | `sync-calendar` | Cron: every 15 minutes | 3 retries |
-| `check-silence` | Cron: daily at 9am coach timezone | No retry |
+| `scheduler-sweep` | Cron: hourly | 3 retries |
+| `check-silence` | Event: triggered by scheduler-sweep per coach | No retry |
 | `send-reminder` | Scheduled time | 3 retries |
 | `process-webhook` | Event: webhook received | 5 retries |
 | `report-usage` | Cron: daily at midnight UTC | 3 retries |
@@ -437,6 +453,38 @@ Juno maintains three types of memory per coach:
 3. If degradation >20%, trigger voice refresh flow
 4. Proactive check-in: "I've noticed my suggestions need more edits. Want to do a quick voice refresh?"
 
+### Knowledge Base (Shared Files & Notes)
+
+> Full architecture: `docs/KNOWLEDGE-BASE.md`
+
+Coaches can share files, notes, and structured data with Juno. This serves as Juno's reference library.
+
+**Content Types:**
+| Type | Examples | Storage |
+|------|----------|---------|
+| Quick Notes | "My sign-off is 'Keep pushing!'" | Database + embedding |
+| Documents | Brand guides, program descriptions | Supabase Storage + extracted text |
+| Media | Logos, client photos, videos | Supabase Storage + AI description |
+| Structured Data | Clients, programs, testimonials | Normalized tables + embeddings |
+
+**Upload Methods:**
+- **WhatsApp/Web Chat:** Send file, Juno asks for context, categorizes and stores
+- **Web Portal:** File manager with folders, tagging, pinning, editing
+
+**Auto-Context Retrieval:**
+When generating content, Juno automatically pulls relevant items:
+1. Pinned items (always included - brand guide, core rules)
+2. Semantic search (embed task, find similar items)
+3. Entity matching (client names, program names mentioned)
+4. Category matching (content task → brand assets)
+
+**Context Budget:** ~1,000 tokens for knowledge base items per request
+
+**Privacy:**
+- Client PII never auto-posted without approval
+- Transformation photos require explicit consent
+- Files encrypted at rest, RLS enforced
+
 ### Integrations (MVP)
 | Service | Method | Purpose |
 |---------|--------|---------|
@@ -495,8 +543,16 @@ ContentModeration
 Conversation
 ├── id, coach_id
 ├── channel (whatsapp, web_chat)
-├── messages[] (role, content, timestamp)
+├── started_at, last_message_at
 └── context (JSON - current task, pending actions)
+
+ConversationMessage (normalized for scale + realtime)
+├── id, conversation_id
+├── role (user, assistant, system)
+├── content (text)
+├── metadata (JSON - buttons, attachments, etc.)
+├── created_at
+└── deleted_at (nullable - for GDPR "forget")
 
 Action
 ├── id, coach_id
@@ -514,11 +570,14 @@ Action
 CalendarEvent
 ├── id, coach_id
 ├── external_id (Google Calendar ID)
+├── etag (for conflict detection)
 ├── title, start, end
 ├── timezone
 ├── type (client_session, blocked, available)
 ├── synced_at
-└── sync_status (synced, conflict, error)
+├── sync_status (synced, pending_review, conflict_detected, error)
+├── conflict_data (JSON - nullable, stores conflicting event details)
+└── resolved_at (nullable - when coach resolved conflict)
 
 UsageEvent
 ├── id, coach_id
@@ -528,7 +587,8 @@ UsageEvent
 ├── billable (boolean)
 ├── undo_of (FK to UsageEvent, nullable - for compensating events)
 ├── undo_window_expires_at (timestamp - 1 hour after creation)
-├── reported_to_stripe (boolean)
+├── reporting_status (pending, reporting, reported, failed)
+├── idempotency_key (UUID - same as event id, used for Stripe dedup)
 ├── stripe_usage_record_id (nullable)
 └── created_at
 
@@ -589,6 +649,52 @@ MemorySummary (consolidated memories)
 ├── patterns_observed (JSON)
 ├── embedding (vector 1536)
 └── created_at
+
+KnowledgeItem (shared files & notes)
+├── id, coach_id
+├── type (note, document, media, structured)
+├── category (brand, client, program, content, legal)
+├── title, description, content
+├── file_path (Supabase Storage path, nullable)
+├── file_type, file_size
+├── extracted_text (OCR/PDF extraction)
+├── ai_description (vision model description for images)
+├── embedding (vector 1536)
+├── tags (text array)
+├── pinned (boolean - always include in context)
+├── usable_in_content (boolean - can be used in generated posts)
+├── contains_client_pii (boolean - auto-detected, contains personal info)
+├── requires_explicit_approval (boolean - coach must approve each use)
+├── last_accessed_at
+└── created_at, updated_at
+
+Client (structured data)
+├── id, coach_id
+├── name, email, phone
+├── goals, challenges, preferences (JSON)
+├── notes
+├── start_date, status (active, paused, completed)
+├── embedding (vector 1536)
+└── created_at, updated_at
+
+Program (structured data)
+├── id, coach_id
+├── name, description
+├── duration, price, currency
+├── includes (text array)
+├── ideal_for, testimonials (text array)
+├── embedding (vector 1536)
+└── created_at, updated_at
+
+Testimonial (for content)
+├── id, coach_id, client_id (optional)
+├── client_name (display name)
+├── content, result
+├── program_id (optional)
+├── image_path, video_path
+├── approved_for_posting (boolean)
+├── embedding (vector 1536)
+└── created_at
 ```
 
 ---
@@ -616,12 +722,15 @@ MemorySummary (consolidated memories)
 ### Usage Metering Pipeline
 
 **Event Flow:**
-1. Action executed → Write UsageEvent (billable: true, undo_window_expires_at: now + 1 hour)
+1. Action executed → Write UsageEvent (billable: true, undo_window_expires_at: now + 1 hour, reporting_status: pending)
 2. If action undone within 1 hour → Write compensating UsageEvent (quantity: -1, undo_of: original event)
 3. If undo after 1 hour → No compensation (already past billing window)
 4. Daily batch job (`report-usage`) → Aggregate unbilled events per coach where undo_window_expires_at < now
-5. Report to Stripe → Create Stripe Usage Records, mark events as reported
-6. Weekly job (`reconcile-billing`) → Compare UsageEvent totals with Stripe records
+5. Mark events as `reporting_status: reporting` before calling Stripe
+6. Report to Stripe → Use `idempotency_key` (event UUID) to prevent double-charging on retry
+7. On success → Mark events as `reporting_status: reported`, store `stripe_usage_record_id`
+8. On failure → Mark as `reporting_status: failed`, retry on next run
+9. Weekly job (`reconcile-billing`) → Compare UsageEvent totals with Stripe records
 
 **Metering Rules:**
 - Only "posted" content counts (not drafts or scheduled)
@@ -763,7 +872,7 @@ General AI assistants (ChatGPT, Claude)
 - [ ] **Supabase Realtime setup for web chat**
 - [ ] Job monitoring dashboard (Inngest provides)
 
-### Week 4: Content Generation + Memory
+### Week 4: Content Generation + Memory + Knowledge Base
 - [ ] Claude integration for content generation
 - [ ] Voice learning from Instagram posts (or fallback data)
 - [ ] Content preview and approval flow (web portal)
@@ -771,6 +880,9 @@ General AI assistants (ChatGPT, Claude)
 - [ ] **Per-coach topic allow-lists**
 - [ ] **Memory tables (using pgvector from Week 3)**
 - [ ] **Voice model creation + anchor embeddings**
+- [ ] **KnowledgeItem table + basic CRUD**
+- [ ] **Note upload via chat (text only)**
+- [ ] **Web portal file manager (basic)**
 - [ ] **Start web chat fallback (using Supabase Realtime from Week 3)**
 - [ ] **Degraded mode for personal IG accounts**
 
@@ -781,7 +893,7 @@ General AI assistants (ChatGPT, Claude)
 - [ ] Deep links from chat to web portal
 - [ ] Quick-reply buttons and proactive nudges
 
-### Week 6: Instagram Posting + Undo + Memory
+### Week 6: Instagram Posting + Undo + Knowledge Base
 - [ ] Instagram posting via Graph API
 - [ ] Content versioning (ContentRevision)
 - [ ] Moderation re-check before posting
@@ -789,7 +901,10 @@ General AI assistants (ChatGPT, Claude)
 - [ ] Posting failure handling and alerts
 - [ ] **Feedback tracking (store edits with embeddings)**
 - [ ] **Lesson extraction from coach edits**
-- [ ] **Memory retrieval in content generation prompts**
+- [ ] **Image/PDF upload + processing (AI description, text extraction)**
+- [ ] **Client/Program/Testimonial tables**
+- [ ] **Auto-context retrieval in content generation**
+- [ ] **Pinning + access tracking**
 
 ### Week 7: Billing + Analytics
 - [ ] Stripe subscription integration
