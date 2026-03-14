@@ -972,6 +972,35 @@
                     </div>
                 </div>
             </div>
+
+            <div class="card">
+                <h2>Capability-Aware Degraded Mode</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    Personal account coaches see adapted UI—no false automation promises.
+                </p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <h4 style="color: var(--danger); margin-bottom: 0.5rem;">Before (Confusing)</h4>
+                        <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); padding: 0.75rem; border-radius: 0.5rem; font-size: 0.8rem;">
+                            <div style="margin-bottom: 0.25rem;">❌ "I'll post this Tuesday at 9am"</div>
+                            <div style="margin-bottom: 0.25rem;">❌ [Schedule Post] button shown</div>
+                            <div>❌ Status: "Scheduled"</div>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 style="color: var(--secondary); margin-bottom: 0.5rem;">After (Capability-Aware)</h4>
+                        <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid var(--secondary); padding: 0.75rem; border-radius: 0.5rem; font-size: 0.8rem;">
+                            <div style="margin-bottom: 0.25rem;">✓ "I'll remind you to post Tuesday 9am"</div>
+                            <div style="margin-bottom: 0.25rem;">✓ [Set Reminder] button instead</div>
+                            <div>✓ Status: "Reminder Set"</div>
+                        </div>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem; padding: 0.75rem; background: var(--bg); border-radius: 0.5rem; font-size: 0.8rem;">
+                    <strong>Capability flags:</strong> <code>can_auto_post</code>, <code>can_fetch_analytics</code>, <code>can_schedule</code><br>
+                    <span style="color: var(--text-muted);">UI adapts based on flags. Upgrade prompts shown inline.</span>
+                </div>
+            </div>
         </div>
 
         <!-- Data Model Tab -->
@@ -1089,6 +1118,19 @@
                             <div class="field"><span class="field-name">resolved_at</span><span class="field-type">timestamp?</span></div>
                         </div>
                     </div>
+
+                    <div class="entity">
+                        <div class="entity-header new">BillingDispute (NEW)</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">id</span><span class="field-type">uuid</span></div>
+                            <div class="field"><span class="field-name">coach_id</span><span class="field-type">fk</span></div>
+                            <div class="field"><span class="field-name">usage_event_id</span><span class="field-type">fk</span></div>
+                            <div class="field"><span class="field-name">reason</span><span class="field-type">text</span></div>
+                            <div class="field"><span class="field-name">status</span><span class="field-type">open | approved | denied</span></div>
+                            <div class="field"><span class="field-name">stripe_credit_id</span><span class="field-type">string?</span></div>
+                            <div class="field"><span class="field-name">resolved_at</span><span class="field-type">timestamp?</span></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1133,7 +1175,7 @@
                         </div>
                         <div class="job-card" style="border-color: var(--secondary);">
                             <strong>scheduler-sweep</strong>
-                            <div class="retry">Hourly (UTC) - triggers per-coach events</div>
+                            <div class="retry">Every 10 min - validates timers</div>
                         </div>
                     </div>
                     <div class="pipeline-stage">
@@ -1220,47 +1262,67 @@
             </div>
 
             <div class="card">
-                <h2>DST-Safe Timezone Scheduling</h2>
+                <h2>Dual-Path Scheduling (No Missed Posts)</h2>
                 <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
-                    Store local time, materialize UTC just-in-time. Never pre-schedule &gt;2 hours ahead.
+                    Two paths ensure posts scheduled minutes ahead are never missed.
                 </p>
-                <div class="flow">
-                    <div class="flow-step">Store Local Time<br><small>(scheduled_local_time)</small></div>
-                    <span class="flow-arrow">→</span>
-                    <div class="flow-step">scheduler-sweep<br><small>(hourly)</small></div>
-                    <span class="flow-arrow">→</span>
-                    <div class="flow-step warning">Convert to UTC<br><small>(handles DST)</small></div>
-                    <span class="flow-arrow">→</span>
-                    <div class="flow-step primary">inngest.send()<br><small>(&lt;2hr timer)</small></div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div style="background: rgba(99, 102, 241, 0.1); border: 1px solid var(--primary); padding: 1rem; border-radius: 0.5rem;">
+                        <strong style="color: var(--primary);">Path A: Immediate Timer</strong>
+                        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">
+                            Coach approves → Immediately create Inngest timer<br>
+                            <small>Handles posts scheduled minutes ahead</small>
+                        </div>
+                    </div>
+                    <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid var(--warning); padding: 1rem; border-radius: 0.5rem;">
+                        <strong style="color: var(--warning);">Path B: Sweep Validation</strong>
+                        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">
+                            Every 10 min → Check timers exist & correct<br>
+                            <small>Catches DST shifts, missing timers</small>
+                        </div>
+                    </div>
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
-                    <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); padding: 0.75rem; border-radius: 0.5rem;">
-                        <strong style="color: var(--danger);">Before (Broken)</strong>
-                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Pre-schedule with fixed UTC → DST shift breaks timing</div>
-                    </div>
-                    <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid var(--secondary); padding: 0.75rem; border-radius: 0.5rem;">
-                        <strong style="color: var(--secondary);">After (DST-Safe)</strong>
-                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Store local + timezone → Convert just-in-time</div>
-                    </div>
+                <div class="flow">
+                    <div class="flow-step">Coach Approves</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">Immediate Timer<br><small>(Path A)</small></div>
+                    <span class="flow-arrow">+</span>
+                    <div class="flow-step warning">Sweep Validates<br><small>(Path B, 10min)</small></div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step secondary">Post Executes</div>
                 </div>
             </div>
 
             <div class="card">
-                <h2>Inngest Outage Fallback</h2>
+                <h2>Inngest Outage Fallback + Recovery</h2>
                 <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
-                    Graceful degradation when Inngest is unavailable.
+                    Graceful degradation + intelligent catch-up on recovery.
                 </p>
                 <div class="flow">
                     <div class="flow-step">Health Check<br><small>(every 5 min)</small></div>
                     <span class="flow-arrow">→</span>
                     <div class="flow-step" style="border-color: var(--danger);">Inngest Down<br><small>&gt;15 min</small></div>
                     <span class="flow-arrow">→</span>
-                    <div class="flow-step warning">Pause Auto-Post</div>
+                    <div class="flow-step warning">Pause + Queue</div>
                     <span class="flow-arrow">→</span>
-                    <div class="flow-step secondary">Manual Mode</div>
+                    <div class="flow-step secondary">Recovery</div>
                 </div>
-                <div style="margin-top: 1rem; padding: 1rem; background: var(--bg); border-radius: 0.5rem; font-size: 0.875rem;">
-                    <strong>Fallback behavior:</strong> Jobs queued in <code>pending_jobs</code> table → Surface "Post Now" button → Replay on recovery
+                <div style="margin-top: 1rem; padding: 1rem; background: var(--bg); border-radius: 0.5rem;">
+                    <strong style="color: var(--secondary);">Recovery Catch-Up Logic:</strong>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 0.75rem; font-size: 0.8rem;">
+                        <div style="background: var(--bg-card); padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+                            <strong>Missed &lt;2hr + approved</strong><br>
+                            <span style="color: var(--secondary);">→ Post immediately</span>
+                        </div>
+                        <div style="background: var(--bg-card); padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+                            <strong>Missed &lt;2hr + not approved</strong><br>
+                            <span style="color: var(--warning);">→ Ask: post now?</span>
+                        </div>
+                        <div style="background: var(--bg-card); padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+                            <strong>Missed &gt;2hr</strong><br>
+                            <span style="color: var(--primary);">→ Offer reschedule</span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1268,13 +1330,13 @@
         <!-- Content Moderation Tab -->
         <div id="moderation" class="tab-content">
             <div class="card">
-                <h2>Tiered Content Moderation</h2>
+                <h2>Tiered Content Moderation (Text + Media)</h2>
                 <div class="moderation-flow">
                     <div class="mod-step input">Generated Content</div>
                     <span class="flow-arrow">→</span>
-                    <div class="mod-step process">Classify Tier</div>
-                    <span class="flow-arrow">→</span>
-                    <div class="mod-step process">Check Allow-List</div>
+                    <div class="mod-step process">Text Classification</div>
+                    <span class="flow-arrow">+</span>
+                    <div class="mod-step process" style="background: rgba(139, 92, 246, 0.2); border-color: #8b5cf6;">Media OCR/Vision</div>
                     <span class="flow-arrow">→</span>
                     <div class="mod-step decision">Decision</div>
                 </div>
@@ -1282,6 +1344,43 @@
                     <div class="mod-step output-good">Green → Auto-post</div>
                     <div class="mod-step" style="background: rgba(245, 158, 11, 0.2); border: 1px solid var(--warning);">Yellow + Attested → Auto-post</div>
                     <div class="mod-step output-review">Red → Always Review</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Media Moderation Pipeline</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    Blocked captions can be reintroduced via images. Moderate media too.
+                </p>
+                <div class="flow">
+                    <div class="flow-step">Images/Carousels</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step" style="background: rgba(139, 92, 246, 0.1); border-color: #8b5cf6;">OCR Extract Text</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step warning">Same Tier Pipeline</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">Vision Check</div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin-top: 1rem; font-size: 0.8rem;">
+                    <div style="background: var(--bg); padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+                        <strong>Screenshots</strong><br>
+                        <span style="color: var(--text-muted);">OCR → classify</span>
+                    </div>
+                    <div style="background: var(--bg); padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+                        <strong>Canva Templates</strong><br>
+                        <span style="color: var(--text-muted);">Render → OCR</span>
+                    </div>
+                    <div style="background: var(--bg); padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+                        <strong>Before/After</strong><br>
+                        <span style="color: var(--warning);">→ Yellow minimum</span>
+                    </div>
+                    <div style="background: var(--bg); padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+                        <strong>Testimonials</strong><br>
+                        <span style="color: var(--text-muted);">Extract claims</span>
+                    </div>
+                </div>
+                <div style="margin-top: 0.75rem; font-size: 0.8rem; color: var(--text-muted);">
+                    Cost: ~$0.002/image via Claude Vision. Acceptable for trust/safety.
                 </div>
             </div>
 
@@ -1412,6 +1511,40 @@
                         Uses <code>idempotency_key</code> (event UUID) to prevent double-charging on job retries.
                         Events marked "reporting" before API call, "reported" after success, "failed" on error.
                     </p>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Post-Window Billing Disputes</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    Real-world disputes happen after the 1-hour undo window. Handle gracefully.
+                </p>
+                <div class="flow">
+                    <div class="flow-step">Coach Disputes<br><small>(up to 30 days)</small></div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step warning">Under Review</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">Approved?</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step secondary">Stripe Credit</div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+                    <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid var(--secondary); padding: 0.75rem; border-radius: 0.5rem;">
+                        <strong style="color: var(--secondary);">If Approved</strong>
+                        <ul style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; padding-left: 1rem; margin-bottom: 0;">
+                            <li>Write compensating UsageEvent</li>
+                            <li>Create Stripe credit/adjustment</li>
+                            <li>Store stripe_credit_id for audit</li>
+                        </ul>
+                    </div>
+                    <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); padding: 0.75rem; border-radius: 0.5rem;">
+                        <strong style="color: var(--danger);">If Denied</strong>
+                        <ul style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; padding-left: 1rem; margin-bottom: 0;">
+                            <li>Add resolution_notes</li>
+                            <li>Notify coach with explanation</li>
+                            <li>Provide escalation path</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>

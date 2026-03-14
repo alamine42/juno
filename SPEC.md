@@ -63,13 +63,26 @@ Create space and time for coaches to do what they do best—coach—by automatin
 
 **Per-Coach Timezone Scheduling (DST-Safe):**
 - Inngest crons run globally (UTC), not per-timezone
-- `scheduler-sweep` job runs hourly, calculates which coaches need actions based on local time
-- **Content posts stored with local time, materialized to UTC just-in-time:**
+- **Two-path scheduling ensures no missed posts:**
+
+**Path A: Immediate Timer (on approval)**
+- When coach approves a post → immediately create Inngest timer
+- Calculate UTC from local time + timezone at approval moment
+- Fire `inngest.send({ runAt: utcTimestamp })` with the timer
+- Store `inngest_event_id` on Content record for tracking
+
+**Path B: Sweep Validation (backup + DST correction)**
+- `scheduler-sweep` runs every 10 minutes (not hourly)
+- Queries posts where local time is within next 30 minutes
+- For each post: Check if Inngest timer exists and is correct
+- If no timer or DST shifted the time → create/update timer
+- Ensures posts scheduled minutes ahead are never missed
+
+**Content posts stored with local time:**
   1. Coach approves post for "Tuesday 9am" → Store as `scheduled_local_time` + `coach_timezone`
-  2. `scheduler-sweep` (hourly) queries posts where local time is within next 2 hours
-  3. Convert to current UTC using coach's timezone (handles DST automatically)
-  4. Fire `inngest.send({ runAt: utcTimestamp })` with short-lived timer
-  5. **Never pre-schedule jobs more than 2 hours ahead** (DST changes only affect future conversions)
+  2. **Immediately** fire Inngest timer (Path A)
+  3. Sweep validates and corrects if needed (Path B)
+  4. **Never pre-schedule jobs more than 2 hours ahead** (DST changes only affect future conversions)
 - For per-coach events (reminders, silence checks): Same pattern - store local, materialize UTC just-in-time
 
 **Calendar Sync Conflict Resolution:**
@@ -205,15 +218,27 @@ Moderation runs at **three checkpoints** to prevent bypass:
 *Coach attestation: During onboarding, coaches attest: "I understand I'm responsible for compliance with health/advertising regulations in my content."
 
 **Detection Steps:**
-1. **Keyword/regex scan:** Categorize content into Green/Yellow/Red tiers
-2. **LLM classification:** Claude Haiku refines tier + identifies specific concerns
-3. **Per-coach allow-list check:** Has coach approved this topic category before?
-4. **Decision logic:**
+1. **Keyword/regex scan:** Categorize text content into Green/Yellow/Red tiers
+2. **Media moderation (images/carousels):**
+   - Run OCR on all images, slides, and screenshots
+   - Extract text → feed into same keyword/LLM pipeline
+   - Vision model check for before/after imagery, sensitive photos
+   - Flag: Regulated claims embedded in images bypass text-only checks
+3. **LLM classification:** Claude Haiku refines tier + identifies specific concerns
+4. **Per-coach allow-list check:** Has coach approved this topic category before?
+5. **Decision logic:**
    - Green: Auto-post per normal autonomy rules
    - Yellow + attested + no specific red flags: Auto-post
    - Yellow + not attested: Flag for review, offer attestation
    - Red: Always flag, require explicit approval
-5. **Store classification:** Log tier, category, confidence, decision, and **revision_id**
+6. **Store classification:** Log tier, category, confidence, decision, and **revision_id**
+
+**Media Moderation Details:**
+- OCR via Claude Vision (batch images, extract all text)
+- Before/after detection: Flag transformation photos for Yellow tier minimum
+- Testimonial screenshots: Extract claims, apply same tiering
+- Canva templates: Render to image, OCR, then classify
+- Cost: ~$0.002 per image (Vision API), acceptable for trust/safety
 
 **Per-Coach Topic Allow-Lists:**
 - When coach approves a Yellow-tier post, offer: "Allow similar content in the future?"
@@ -311,11 +336,24 @@ Coaches with personal accounts can still get value:
 4. **Manual performance tracking:** Coach tells Juno how posts performed
 5. **Calendar/scheduling:** Plan content calendar, get reminders (no auto-post)
 
-**Degraded Mode UX:**
-- Clear visual indicator in web portal: "Upgrade to Business account for auto-posting"
-- WhatsApp messages include: "[Copy to Instagram]" button with pre-formatted text
-- Weekly nudge: "Upgrade to Business account to unlock auto-posting"
-- Track conversion rate from degraded → full mode
+**Degraded Mode UX (Capability-Aware UI):**
+- **Capability flags per coach:** `can_auto_post`, `can_fetch_analytics`, `can_schedule`
+- **UI adapts to capabilities:**
+  - Hide "Schedule Post" button → Show "Set Reminder" instead
+  - Hide "Auto-approve all" → Show "Copy All to Clipboard"
+  - Replace "Scheduled" status → "Reminder Set for Tuesday 9am"
+  - Disable automation toggles with explanation tooltip
+- **Chat responses are capability-aware:**
+  - Instead of: "I'll post this Tuesday at 9am"
+  - Say: "Since you're on a personal account, I'll remind you to post Tuesday at 9am"
+- **Visual indicators:**
+  - Banner in web portal: "Upgrade to Business account for auto-posting" with one-click upgrade flow
+  - WhatsApp messages include: "[Copy to Instagram]" button with pre-formatted text
+  - Inline "Why can't I auto-post?" help link
+- **Upgrade prompts:**
+  - Weekly nudge: "Upgrade to Business account to unlock auto-posting"
+  - Post-reminder: "Want me to post automatically next time? [Upgrade Account]"
+  - Track conversion rate from degraded → full mode
 
 **Onboarding UX:**
 - Check account type during OAuth callback
@@ -407,14 +445,22 @@ Coaches with personal accounts can still get value:
 
 **Inngest Outage Fallback (Single Point of Failure Mitigation):**
 - All pending actions stored in `pending_jobs` table before sending to Inngest
+- Store `desired_execution_at` (original intended timestamp) on each job
 - Mark job as `dispatched` when Inngest accepts, `completed` when done
 - Health check: Vercel cron (every 5 min) checks Inngest API status
 - If Inngest unhealthy for >15 minutes:
   1. Pause autonomous posting (mark coach for manual mode)
   2. Alert coaches: "Auto-posting paused, manual posting available"
   3. Surface "Post Now" button in web portal for pending content
-  4. Queue jobs in DB; replay when Inngest recovers
-- Recovery: On Inngest healthy, replay `pending` jobs from DB
+  4. Queue jobs in DB with original timestamps preserved
+- **Recovery with catch-up logic:**
+  1. On Inngest healthy, query all `pending` jobs from DB
+  2. For each missed job (where `desired_execution_at < now`):
+     - If missed by <2 hours AND coach pre-approved: Execute immediately (backfill)
+     - If missed by <2 hours AND not pre-approved: Ask coach "Post now or reschedule?"
+     - If missed by >2 hours: Notify coach, offer reschedule to next optimal slot
+  3. For future jobs: Re-dispatch to Inngest normally
+  4. Surface recovery summary: "3 posts were delayed, 2 posted now, 1 needs your input"
 - Monitoring: Alert ops team if Inngest down >30 minutes
 
 **Cost Projection:**
@@ -781,6 +827,40 @@ Testimonial (for content)
 - Sum UsageEvents by coach for billing period
 - Compare with Stripe usage records
 - Log discrepancies > 1% to alerts channel
+
+**Post-Window Dispute Workflow (after 1-hour grace period):**
+Real-world disputes happen after the undo window closes. Handle gracefully:
+
+1. **Dispute initiation:**
+   - Coach contacts support or clicks "Dispute Charge" in activity log
+   - Create `BillingDispute` record: `{ usage_event_id, reason, status: 'open', created_at }`
+
+2. **Dispute statuses:** `open` → `under_review` → `approved` | `denied`
+
+3. **If dispute approved:**
+   - Write compensating UsageEvent with `dispute_id` reference
+   - If already reported to Stripe: Create Stripe credit/adjustment
+   - Store `stripe_credit_id` on dispute record for audit trail
+   - Notify coach: "Your dispute was approved, credit applied"
+
+4. **If dispute denied:**
+   - Add `resolution_notes` explaining why
+   - Notify coach with explanation + escalation path
+
+5. **Data model additions:**
+   ```
+   BillingDispute: id, coach_id, usage_event_id, reason, status,
+                  resolution_notes, stripe_credit_id, created_at, resolved_at
+   ```
+
+6. **UX for disputes:**
+   - Activity log shows "Dispute" button for past charges (up to 30 days)
+   - Dispute form: Select charge, describe issue, submit
+   - Status visible in billing section: "Dispute pending" / "Credit applied"
+
+7. **Reconciliation handles disputes:**
+   - `reconcile-billing` job includes dispute credits in totals
+   - Ensures Stripe records match UsageEvents + BillingDispute credits
 - Generate monthly reconciliation report
 
 **Edge Cases:**
