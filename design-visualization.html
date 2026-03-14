@@ -654,6 +654,7 @@
         <div class="tabs">
             <div class="tab active" onclick="showTab('overview')">Overview</div>
             <div class="tab" onclick="showTab('architecture')">Architecture</div>
+            <div class="tab" onclick="showTab('skills')">Agent Skills</div>
             <div class="tab" onclick="showTab('userflow')">User Flow</div>
             <div class="tab" onclick="showTab('datamodel')">Data Model</div>
             <div class="tab" onclick="showTab('memory')">Memory & Drift</div>
@@ -902,6 +903,214 @@
                         <li><strong>Layer 3:</strong> Application-level coach_id WHERE clauses</li>
                         <li><strong>Layer 4:</strong> Audit logging for sensitive operations</li>
                     </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Agent Skills Tab -->
+        <div id="skills" class="tab-content">
+            <div class="card">
+                <h2>Agent Skills Architecture</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem;">
+                    ~110 skills organized by category. Skills are composable and chain together for complex tasks.
+                </p>
+                <div class="stats-grid">
+                    <div class="stat">
+                        <div class="stat-value">36</div>
+                        <div class="stat-label">MVP Skills</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">77</div>
+                        <div class="stat-label">Post-MVP</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">19</div>
+                        <div class="stat-label">Future</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value">5</div>
+                        <div class="stat-label">Integrations</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Skill Categories</h2>
+                <div class="architecture">
+                    <div class="arch-layer highlight">
+                        <h4>Strategy & Planning</h4>
+                        <div class="arch-item">define_vision</div>
+                        <div class="arch-item">set_okrs</div>
+                        <div class="arch-item">positioning_angles</div>
+                        <div class="arch-item">pricing_strategy</div>
+                    </div>
+                    <div class="arch-layer highlight">
+                        <h4>Marketing</h4>
+                        <div class="arch-item">generate_caption</div>
+                        <div class="arch-item">generate_carousel</div>
+                        <div class="arch-item">schedule_post</div>
+                        <div class="arch-item">email_sequence</div>
+                        <div class="arch-item">launch_strategy</div>
+                    </div>
+                    <div class="arch-layer highlight">
+                        <h4>Sales</h4>
+                        <div class="arch-item">qualify_lead</div>
+                        <div class="arch-item">draft_dm_response</div>
+                        <div class="arch-item">create_proposal</div>
+                        <div class="arch-item">handle_objection</div>
+                    </div>
+                </div>
+                <div class="architecture" style="margin-top: 1rem;">
+                    <div class="arch-layer">
+                        <h4>Client Operations</h4>
+                        <div class="arch-item">onboard_client</div>
+                        <div class="arch-item">send_check_in</div>
+                        <div class="arch-item">schedule_session</div>
+                        <div class="arch-item">generate_workout</div>
+                    </div>
+                    <div class="arch-layer">
+                        <h4>Payments (Stripe)</h4>
+                        <div class="arch-item">create_invoice</div>
+                        <div class="arch-item">send_invoice</div>
+                        <div class="arch-item">create_subscription</div>
+                        <div class="arch-item">process_refund</div>
+                    </div>
+                    <div class="arch-layer">
+                        <h4>Calendar (Google)</h4>
+                        <div class="arch-item">get_availability</div>
+                        <div class="arch-item">create_event</div>
+                        <div class="arch-item">find_conflicts</div>
+                        <div class="arch-item">reschedule_session</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Skill Execution Engine</h2>
+                <div class="flow">
+                    <div class="flow-step">Coach Request</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">Intent Classifier</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">Skill Planner</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step warning">Approval Gate</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step secondary">Execute Chain</div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1rem;">
+                    <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid var(--secondary); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong style="color: var(--secondary);">Auto-Execute</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">Confidence &gt; 0.8</div>
+                    </div>
+                    <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid var(--warning); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong style="color: var(--warning);">Execute + Notify</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">0.5 &lt; Confidence &lt; 0.8</div>
+                    </div>
+                    <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong style="color: var(--danger);">Ask First</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">Confidence &lt; 0.5 or High Risk</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Risk Classification</h2>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <th style="text-align: left; padding: 0.75rem;">Risk Level</th>
+                        <th style="text-align: left; padding: 0.75rem;">Approval</th>
+                        <th style="text-align: left; padding: 0.75rem;">Examples</th>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem; color: var(--secondary); font-weight: bold;">None</td>
+                        <td style="padding: 0.75rem;">Never</td>
+                        <td style="padding: 0.75rem; font-size: 0.875rem;">generate_caption, get_availability, search_documents</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem; color: var(--primary); font-weight: bold;">Low</td>
+                        <td style="padding: 0.75rem;">If conf &lt; 0.5</td>
+                        <td style="padding: 0.75rem; font-size: 0.875rem;">schedule_post, send_check_in, create_event</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem; color: var(--warning); font-weight: bold;">Medium</td>
+                        <td style="padding: 0.75rem;">If conf &lt; 0.8</td>
+                        <td style="padding: 0.75rem; font-size: 0.875rem;">publish_now, send_dm, send_invoice</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 0.75rem; color: var(--danger); font-weight: bold;">High</td>
+                        <td style="padding: 0.75rem;">Always</td>
+                        <td style="padding: 0.75rem; font-size: 0.875rem;">delete_post, cancel_session, delete_event</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.75rem; color: #dc2626; font-weight: bold;">Critical</td>
+                        <td style="padding: 0.75rem;">Always + Confirm</td>
+                        <td style="padding: 0.75rem; font-size: 0.875rem;">cancel_subscription, process_refund</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="card">
+                <h2>Integration Dependencies</h2>
+                <div class="data-model">
+                    <div class="entity">
+                        <div class="entity-header">Google Workspace</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">Gmail</span><span class="field-type">draft, send, search</span></div>
+                            <div class="field"><span class="field-name">Calendar</span><span class="field-type">events, availability</span></div>
+                            <div class="field"><span class="field-name">Docs</span><span class="field-type">create, edit, share</span></div>
+                            <div class="field"><span class="field-name">Sheets</span><span class="field-type">reports, tracking</span></div>
+                        </div>
+                    </div>
+                    <div class="entity">
+                        <div class="entity-header new">Stripe</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">Invoices</span><span class="field-type">create, send, status</span></div>
+                            <div class="field"><span class="field-name">Subscriptions</span><span class="field-type">create, pause, cancel</span></div>
+                            <div class="field"><span class="field-name">Payments</span><span class="field-type">refunds, revenue</span></div>
+                        </div>
+                    </div>
+                    <div class="entity">
+                        <div class="entity-header">Instagram</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">Publishing</span><span class="field-type">post, schedule, delete</span></div>
+                            <div class="field"><span class="field-name">Analytics</span><span class="field-type">performance, growth</span></div>
+                            <div class="field"><span class="field-name">Engagement</span><span class="field-type">DMs, comments</span></div>
+                        </div>
+                    </div>
+                    <div class="entity">
+                        <div class="entity-header">WhatsApp</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">Messaging</span><span class="field-type">send, remind, ask</span></div>
+                            <div class="field"><span class="field-name">Interactive</span><span class="field-type">buttons, lists</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>MVP vs Post-MVP Skills</h2>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <h4 style="color: var(--secondary); margin-bottom: 0.75rem;">MVP (36 Skills)</h4>
+                        <div style="font-size: 0.8rem; color: var(--text-muted);">
+                            <div style="margin-bottom: 0.5rem;"><strong>Content:</strong> generate_caption, generate_carousel, generate_reel_script, schedule_post, publish_now</div>
+                            <div style="margin-bottom: 0.5rem;"><strong>Calendar:</strong> get_availability, create_event, find_conflicts, update_event, delete_event</div>
+                            <div style="margin-bottom: 0.5rem;"><strong>Billing:</strong> create_invoice, send_invoice, get_payment_status, calculate_revenue</div>
+                            <div style="margin-bottom: 0.5rem;"><strong>Comms:</strong> send_whatsapp, send_reminder, ask_question, present_options</div>
+                            <div><strong>Analytics:</strong> get_post_performance, identify_top_content</div>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 style="color: var(--primary); margin-bottom: 0.75rem;">Post-MVP (77 Skills)</h4>
+                        <div style="font-size: 0.8rem; color: var(--text-muted);">
+                            <div style="margin-bottom: 0.5rem;"><strong>Sales:</strong> qualify_lead, create_proposal, send_follow_up, handle_objection</div>
+                            <div style="margin-bottom: 0.5rem;"><strong>Client Ops:</strong> onboard_client, send_check_in, generate_workout, celebrate_milestone</div>
+                            <div style="margin-bottom: 0.5rem;"><strong>Email:</strong> draft_email, send_email, email_sequence, newsletter</div>
+                            <div style="margin-bottom: 0.5rem;"><strong>Strategy:</strong> competitive_analysis, pricing_strategy, set_okrs</div>
+                            <div><strong>Billing:</strong> create_subscription, process_refund, get_mrr</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

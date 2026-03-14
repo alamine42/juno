@@ -1108,6 +1108,606 @@ Week 1 ────────────────────────�
 
 ---
 
+## Agent Skills Architecture
+
+Juno's capabilities are organized as discrete, composable skills. Each skill has defined inputs, outputs, side effects, and risk levels. Skills can be chained together to accomplish complex tasks.
+
+### Design Philosophy
+
+Coaches are **solo founders running service businesses**. They need:
+- **Marketing** to get clients
+- **Sales** to close clients
+- **Operations** to serve clients
+- **Strategy** to grow sustainably
+
+Skills are sourced from proven frameworks:
+- [Marketing Skills](https://github.com/coreyhaines31/marketingskills) - 40+ conversion & growth skills
+- [Lenny Skills](https://github.com/RefoundAI/lenny-skills) - 86 product/business skills from Lenny's Podcast
+
+### Skill Categories Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           JUNO SKILL ARCHITECTURE                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                        STRATEGY & PLANNING                            │  │
+│  │  Vision • Goals/OKRs • Roadmap • Competitive Analysis • Positioning  │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                    │                                        │
+│          ┌─────────────────────────┼─────────────────────────┐             │
+│          │                         │                         │             │
+│          ▼                         ▼                         ▼             │
+│  ┌──────────────┐         ┌──────────────┐         ┌──────────────┐       │
+│  │  MARKETING   │         │    SALES     │         │  OPERATIONS  │       │
+│  │              │         │              │         │              │       │
+│  │ • Content    │         │ • Pipeline   │         │ • Clients    │       │
+│  │ • SEO        │         │ • Outreach   │         │ • Programs   │       │
+│  │ • Paid Ads   │         │ • Proposals  │         │ • Calendar   │       │
+│  │ • Email      │         │ • Follow-up  │         │ • Payments   │       │
+│  │ • Social     │         │ • Objections │         │ • Delivery   │       │
+│  └──────────────┘         └──────────────┘         └──────────────┘       │
+│          │                         │                         │             │
+│          └─────────────────────────┼─────────────────────────┘             │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                      MEASUREMENT & LEARNING                           │  │
+│  │  Analytics • A/B Testing • Feedback • Retrospectives • Optimization  │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                         INTEGRATIONS LAYER                            │  │
+│  │  Google Workspace • Stripe • Instagram • WhatsApp • Canva            │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Skill Definition Schema
+
+```typescript
+interface Skill {
+  name: string;                    // Unique identifier
+  category: SkillCategory;         // Strategy, Marketing, Sales, etc.
+  description: string;             // For LLM to understand when to use
+  parameters: JSONSchema;          // Structured input
+  returns: JSONSchema;             // Structured output
+
+  // Execution control
+  requires_approval: boolean;      // Coach must confirm?
+  confidence_threshold: number;    // Auto-execute above this (0-1)
+  risk_level: 'none' | 'low' | 'medium' | 'high' | 'critical';
+  undo_capable: boolean;           // Can be reversed?
+
+  // Dependencies
+  required_integrations: string[]; // ['instagram', 'stripe', etc.]
+  required_scopes: string[];       // OAuth scopes needed
+  depends_on_skills: string[];     // Other skills this may call
+
+  // Metadata
+  side_effects: string[];          // What external systems it touches
+  mvp_priority: 'mvp' | 'post-mvp' | 'future';
+  estimated_tokens: number;        // Typical token usage
+}
+```
+
+---
+
+### 1. STRATEGY & PLANNING SKILLS
+
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `define_vision` | Create compelling business direction | None | Post-MVP | None |
+| `set_okrs` | Establish quarterly objectives/key results | None | Post-MVP | Google Docs |
+| `working_backwards` | Amazon-style outcome-first planning | None | Post-MVP | None |
+| `problem_definition` | Clarify problems before solutions | None | MVP | None |
+| `competitive_analysis` | Analyze competitor strategies | None | Post-MVP | None |
+| `positioning_messaging` | Craft differentiated positioning | None | Post-MVP | None |
+| `positioning_angles` | Find compelling selling angles | None | MVP | None |
+| `pricing_strategy` | Design pricing models | None | Post-MVP | Stripe |
+| `prioritize_roadmap` | Decide what to focus on | None | Post-MVP | None |
+| `planning_under_uncertainty` | Plan when outcomes unclear | None | Future | None |
+| `evaluating_tradeoffs` | Make better decisions | None | Post-MVP | None |
+| `brand_voice_extract` | Extract voice from existing content | None | MVP | Instagram |
+
+**MVP Strategy Skills:** `problem_definition`, `positioning_angles`, `brand_voice_extract`
+
+---
+
+### 2. MARKETING SKILLS
+
+#### Content Creation (MVP Priority)
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `generate_caption` | Instagram captions with coach voice | None | MVP | None |
+| `generate_carousel` | Multi-slide educational content | None | MVP | Canva |
+| `generate_reel_script` | Short-form video scripts | None | MVP | None |
+| `generate_story_sequence` | Connected Stories content | None | MVP | None |
+| `repurpose_content` | Transform content across formats | None | MVP | None |
+| `suggest_topics` | Generate content ideas | None | MVP | None |
+| `humanize_content` | Remove AI-sounding patterns | None | MVP | None |
+
+#### Publishing (MVP Priority)
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `schedule_post` | Queue for future publishing | Low | MVP | Instagram, Inngest |
+| `publish_now` | Immediate publish | Medium | MVP | Instagram |
+| `delete_post` | Remove published content | High | MVP | Instagram |
+| `get_post_status` | Check publishing state | None | MVP | Instagram |
+
+#### SEO & Discovery
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `keyword_research` | Find content opportunities | None | Post-MVP | None |
+| `ai_seo` | Optimize for AI search engines | None | Future | None |
+| `seo_content` | SEO-optimized long-form | None | Future | Google Docs |
+| `find_trending_topics` | Current trends in niche | None | Post-MVP | None |
+| `find_hashtags` | Research relevant hashtags | None | MVP | Instagram |
+
+#### Email Marketing
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `email_sequence` | Build automated email flows | Low | Post-MVP | Gmail |
+| `draft_email` | Compose email | None | Post-MVP | Gmail |
+| `send_email` | Send email | Medium | Post-MVP | Gmail |
+| `cold_email` | B2B outreach sequences | Low | Future | Gmail |
+| `lead_magnet` | Create list-building assets | None | Post-MVP | Google Docs |
+| `newsletter` | Email newsletter content | None | Post-MVP | Gmail |
+
+#### Paid & Distribution
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `paid_ads_strategy` | Ad campaign planning | None | Future | Meta Ads |
+| `ad_creative` | Generate ad variations | None | Future | None |
+| `launch_strategy` | Product launch planning | None | Post-MVP | None |
+| `launch_marketing` | Execute launch sequence | Medium | Post-MVP | Multiple |
+
+#### Conversion Optimization
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `page_cro` | Landing page optimization | None | Future | None |
+| `signup_flow_cro` | Registration optimization | None | Future | None |
+| `direct_response_copy` | Copy that converts | None | Post-MVP | None |
+
+#### Growth & Retention
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `designing_growth_loops` | Build viral mechanics | None | Future | None |
+| `retention_engagement` | Reduce churn strategies | None | Post-MVP | None |
+| `churn_prevention` | Save cancellations | Low | Post-MVP | Stripe |
+| `referral_program` | Word-of-mouth setup | Low | Future | Stripe |
+
+**MVP Marketing Skills:** `generate_caption`, `generate_carousel`, `generate_reel_script`, `generate_story_sequence`, `repurpose_content`, `suggest_topics`, `humanize_content`, `schedule_post`, `publish_now`, `delete_post`, `get_post_status`, `find_hashtags`
+
+---
+
+### 3. SALES SKILLS
+
+#### Pipeline Management
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `qualify_lead` | Assess lead fit | None | Post-MVP | None |
+| `move_pipeline_stage` | Update lead status | Low | Post-MVP | None |
+| `get_pipeline_status` | View sales funnel | None | Post-MVP | None |
+| `forecast_revenue` | Project future income | None | Post-MVP | Stripe |
+
+#### Outreach & Follow-up
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `draft_dm_response` | Reply to inquiries | None | MVP | Instagram |
+| `send_dm` | Send direct message | Medium | Post-MVP | Instagram |
+| `send_pricing` | Share program info | Low | Post-MVP | None |
+| `create_follow_up` | Generate follow-up message | None | Post-MVP | None |
+| `send_follow_up` | Execute follow-up | Medium | Post-MVP | Instagram, Gmail |
+| `schedule_discovery_call` | Book sales calls | Low | Post-MVP | Google Calendar |
+
+#### Proposals & Closing
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `create_proposal` | Custom proposals | None | Post-MVP | Google Docs |
+| `send_proposal` | Deliver proposal | Medium | Post-MVP | Gmail |
+| `handle_objection` | Overcome hesitations | None | Post-MVP | None |
+| `founder_sales` | Close first customers | None | Post-MVP | None |
+
+**MVP Sales Skills:** `draft_dm_response`
+
+---
+
+### 4. CLIENT OPERATIONS SKILLS
+
+#### Client Management
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `onboard_client` | Start client journey | Medium | Post-MVP | Multiple |
+| `send_check_in` | Proactive check-ins | Low | Post-MVP | WhatsApp, Gmail |
+| `log_progress` | Track client metrics | Low | Post-MVP | Google Sheets |
+| `get_client_history` | Retrieve client context | None | Post-MVP | None |
+| `update_client_goals` | Modify objectives | Low | Post-MVP | None |
+| `flag_at_risk` | Identify struggling clients | None | Post-MVP | None |
+| `suggest_intervention` | Recommend re-engagement | None | Post-MVP | None |
+| `celebrate_milestone` | Acknowledge wins | Low | Post-MVP | WhatsApp, Instagram |
+
+#### Session Management
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `schedule_session` | Book coaching session | Low | MVP | Google Calendar |
+| `reschedule_session` | Move existing session | Medium | MVP | Google Calendar |
+| `cancel_session` | Cancel with policy check | High | MVP | Google Calendar |
+| `send_session_reminder` | Pre-session nudge | Low | Post-MVP | WhatsApp |
+| `send_session_recap` | Post-session summary | Low | Post-MVP | Gmail |
+
+#### Program Delivery
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `generate_workout` | Create workout plans | None | Post-MVP | None |
+| `generate_meal_plan` | Create nutrition plans | None | Post-MVP | None |
+| `send_weekly_plan` | Deliver program content | Medium | Post-MVP | WhatsApp, Gmail |
+| `adjust_program` | Modify based on feedback | Low | Post-MVP | None |
+| `answer_program_question` | Explain exercise/nutrition | None | Post-MVP | WhatsApp |
+
+**MVP Client Ops Skills:** `schedule_session`, `reschedule_session`, `cancel_session`
+
+---
+
+### 5. PAYMENTS & BILLING SKILLS (Stripe Integration)
+
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `create_invoice` | Generate invoice | Medium | MVP | Stripe |
+| `send_invoice` | Deliver via email | Medium | MVP | Stripe, Gmail |
+| `get_payment_status` | Check payment state | None | MVP | Stripe |
+| `send_payment_reminder` | Chase overdue | Medium | Post-MVP | Stripe, Gmail |
+| `create_subscription` | Set up recurring billing | High | Post-MVP | Stripe |
+| `pause_subscription` | Temporary hold | High | Post-MVP | Stripe |
+| `cancel_subscription` | End billing | Critical | Post-MVP | Stripe |
+| `process_refund` | Issue refunds | Critical | Post-MVP | Stripe |
+| `calculate_revenue` | Revenue reporting | None | MVP | Stripe |
+| `get_mrr` | Monthly recurring revenue | None | Post-MVP | Stripe |
+| `log_expense` | Track expenses | Low | Future | Google Sheets |
+
+**MVP Billing Skills:** `create_invoice`, `send_invoice`, `get_payment_status`, `calculate_revenue`
+
+---
+
+### 6. CALENDAR & SCHEDULING SKILLS (Google Calendar)
+
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `get_availability` | Find open slots | None | MVP | Google Calendar |
+| `create_event` | Add calendar entry | Low | MVP | Google Calendar |
+| `update_event` | Modify calendar entry | Medium | MVP | Google Calendar |
+| `delete_event` | Remove calendar entry | High | MVP | Google Calendar |
+| `find_conflicts` | Detect scheduling overlaps | None | MVP | Google Calendar |
+| `suggest_reschedule` | Find alternative times | None | Post-MVP | Google Calendar |
+| `block_time` | Reserve personal time | Low | Post-MVP | Google Calendar |
+| `set_working_hours` | Define availability | Low | Post-MVP | None |
+| `sync_external_calendar` | Pull external events | Medium | Post-MVP | Google Calendar |
+
+**MVP Calendar Skills:** `get_availability`, `create_event`, `update_event`, `delete_event`, `find_conflicts`
+
+---
+
+### 7. COMMUNICATION SKILLS (Google Workspace)
+
+#### Email (Gmail)
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `draft_email` | Compose email | None | Post-MVP | Gmail |
+| `send_email` | Send email | Medium | Post-MVP | Gmail |
+| `search_email` | Find emails | None | Post-MVP | Gmail |
+| `summarize_thread` | Digest conversation | None | Post-MVP | Gmail |
+| `batch_email` | Send to multiple | High | Future | Gmail |
+
+#### Documents (Google Docs)
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `create_document` | New doc | Low | Post-MVP | Google Docs |
+| `edit_document` | Modify doc | Low | Post-MVP | Google Docs |
+| `share_document` | Share with client | Medium | Post-MVP | Google Docs |
+| `generate_contract` | Client agreement | Low | Post-MVP | Google Docs |
+
+#### Sheets (Google Sheets)
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `create_spreadsheet` | New sheet | Low | Post-MVP | Google Sheets |
+| `update_spreadsheet` | Add data | Low | Post-MVP | Google Sheets |
+| `generate_report` | Report from data | None | Post-MVP | Google Sheets |
+
+#### Messaging
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `send_whatsapp` | Send WhatsApp message | Medium | MVP | WhatsApp |
+| `send_reminder` | Time-triggered nudge | Low | MVP | WhatsApp, Inngest |
+| `ask_question` | Request coach input | None | MVP | WhatsApp |
+| `present_options` | Show choices | None | MVP | WhatsApp |
+
+**MVP Communication Skills:** `send_whatsapp`, `send_reminder`, `ask_question`, `present_options`
+
+---
+
+### 8. ANALYTICS & MEASUREMENT SKILLS
+
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `get_post_performance` | Single post metrics | None | MVP | Instagram |
+| `get_growth_metrics` | Follower trends | None | Post-MVP | Instagram |
+| `identify_top_content` | Best performers | None | MVP | Instagram |
+| `compare_content` | A/B comparison | None | Post-MVP | Instagram |
+| `find_best_posting_time` | Optimal schedule | None | Post-MVP | Instagram |
+| `ab_test_setup` | Design experiments | None | Future | None |
+| `generate_weekly_report` | Performance summary | None | Post-MVP | Multiple |
+| `get_client_metrics` | Client progress dashboard | None | Post-MVP | None |
+| `measuring_pmf` | Product-market fit | None | Future | None |
+
+**MVP Analytics Skills:** `get_post_performance`, `identify_top_content`
+
+---
+
+### 9. LEARNING & IMPROVEMENT SKILLS
+
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `run_retrospective` | Learn from past | None | Future | None |
+| `gather_testimonials` | Collect social proof | None | Post-MVP | WhatsApp |
+| `analyze_churn` | Why clients leave | None | Post-MVP | None |
+| `suggest_improvements` | Recommendations | None | Post-MVP | None |
+| `conducting_user_interviews` | Discovery prep | None | Future | None |
+| `analyzing_user_feedback` | Synthesize feedback | None | Post-MVP | None |
+
+---
+
+### Skill Execution Engine
+
+#### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          SKILL EXECUTION ENGINE                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   Coach Request (WhatsApp/Web)                                              │
+│        │                                                                     │
+│        ▼                                                                     │
+│   ┌─────────────────────────────────────────────────────────────────────┐  │
+│   │                        INTENT CLASSIFIER                             │  │
+│   │   • Parse natural language request                                   │  │
+│   │   • Identify required skills                                         │  │
+│   │   • Check coach capabilities/integrations                            │  │
+│   └─────────────────────────────────────────────────────────────────────┘  │
+│        │                                                                     │
+│        ▼                                                                     │
+│   ┌─────────────────────────────────────────────────────────────────────┐  │
+│   │                        SKILL PLANNER                                 │  │
+│   │   • Decompose into skill chain                                       │  │
+│   │   • Resolve dependencies                                             │  │
+│   │   • Estimate confidence per step                                     │  │
+│   └─────────────────────────────────────────────────────────────────────┘  │
+│        │                                                                     │
+│        ▼                                                                     │
+│   ┌─────────────────────────────────────────────────────────────────────┐  │
+│   │                     APPROVAL GATE                                    │  │
+│   │   • Check cumulative risk level                                      │  │
+│   │   • If confidence < threshold → ask coach                            │  │
+│   │   • If risk = critical → always ask                                  │  │
+│   └─────────────────────────────────────────────────────────────────────┘  │
+│        │                                                                     │
+│        ├──────────────────────┬────────────────────┐                        │
+│        ▼                      ▼                    ▼                        │
+│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                 │
+│   │ Auto-Execute │    │Execute+Notify│    │  Ask First   │                 │
+│   │ (conf > 0.8) │    │(0.5 < c < 0.8)│   │ (c < 0.5)    │                 │
+│   └──────────────┘    └──────────────┘    └──────────────┘                 │
+│        │                      │                    │                        │
+│        └──────────────────────┼────────────────────┘                        │
+│                               ▼                                              │
+│   ┌─────────────────────────────────────────────────────────────────────┐  │
+│   │                      SKILL EXECUTOR                                  │  │
+│   │   • Execute skill with parameters                                    │  │
+│   │   • Handle retries and errors                                        │  │
+│   │   • Log to audit trail                                               │  │
+│   └─────────────────────────────────────────────────────────────────────┘  │
+│        │                                                                     │
+│        ▼                                                                     │
+│   ┌─────────────────────────────────────────────────────────────────────┐  │
+│   │                     RESULT HANDLER                                   │  │
+│   │   • Format response for coach                                        │  │
+│   │   • Queue follow-up skills if needed                                 │  │
+│   │   • Update memory with outcome                                       │  │
+│   └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Skill Chain Example
+
+```typescript
+// Coach: "Create content about my 8-week program for this week"
+
+const skillChain = {
+  request: "Create content about my 8-week program for this week",
+  plan: [
+    { skill: "search_documents", params: { query: "8-week program" }, confidence: 1.0 },
+    { skill: "find_testimonial", params: { program: "8-week" }, confidence: 0.9 },
+    { skill: "recall_preference", params: { key: "posting_frequency" }, confidence: 1.0 },
+    { skill: "generate_caption", params: { topic: "8-week", type: "promotional" }, confidence: 0.85, repeat: 5 },
+    { skill: "present_options", params: { message: "Here are 5 posts for this week" }, confidence: 1.0 }
+  ],
+  cumulative_risk: "low",
+  requires_approval: false,  // All skills are low/no risk
+  estimated_tokens: 2500
+};
+```
+
+#### Rollback & Undo
+
+For skill chains with side effects:
+
+```typescript
+interface SkillExecution {
+  execution_id: string;
+  skill_chain: SkillStep[];
+  executed_steps: {
+    step_index: number;
+    skill: string;
+    result: any;
+    undo_action?: UndoAction;  // How to reverse this step
+    executed_at: timestamp;
+  }[];
+  status: 'planning' | 'executing' | 'completed' | 'failed' | 'rolled_back';
+}
+
+// If step 3 fails, rollback steps 2, 1 in reverse order
+async function rollback(execution: SkillExecution) {
+  for (const step of execution.executed_steps.reverse()) {
+    if (step.undo_action) {
+      await executeUndo(step.undo_action);
+    }
+  }
+}
+```
+
+---
+
+### Risk Classification & Approval Matrix
+
+| Risk Level | Confidence Threshold | Approval Required | Examples |
+|------------|---------------------|-------------------|----------|
+| **None** | 0.0 (always auto) | Never | `generate_caption`, `get_availability`, `search_documents` |
+| **Low** | 0.5 | If confidence < 0.5 | `schedule_post`, `send_check_in`, `create_event` |
+| **Medium** | 0.8 | If confidence < 0.8 | `publish_now`, `send_dm`, `send_invoice` |
+| **High** | 1.0 (always ask) | Always | `delete_post`, `cancel_session`, `delete_event` |
+| **Critical** | 1.0 + confirmation | Always + confirm | `cancel_subscription`, `process_refund` |
+
+---
+
+### Integration Dependencies
+
+#### Google Workspace
+```typescript
+const googleWorkspace = {
+  gmail: {
+    scopes: ['gmail.compose', 'gmail.readonly', 'gmail.send'],
+    skills: ['draft_email', 'send_email', 'search_email', 'batch_email', 'summarize_thread']
+  },
+  calendar: {
+    scopes: ['calendar.events', 'calendar.readonly'],
+    skills: ['get_availability', 'create_event', 'update_event', 'delete_event',
+             'find_conflicts', 'schedule_session', 'reschedule_session', 'cancel_session']
+  },
+  docs: {
+    scopes: ['documents', 'drive.file'],
+    skills: ['create_document', 'edit_document', 'share_document', 'generate_contract']
+  },
+  sheets: {
+    scopes: ['spreadsheets', 'drive.file'],
+    skills: ['create_spreadsheet', 'update_spreadsheet', 'generate_report', 'log_progress']
+  }
+};
+```
+
+#### Stripe
+```typescript
+const stripe = {
+  scopes: ['invoices', 'subscriptions', 'customers', 'payment_intents', 'usage_records'],
+  skills: [
+    'create_invoice', 'send_invoice', 'get_payment_status', 'send_payment_reminder',
+    'create_subscription', 'pause_subscription', 'cancel_subscription',
+    'process_refund', 'calculate_revenue', 'get_mrr', 'forecast_revenue'
+  ],
+  webhooks: ['invoice.paid', 'invoice.payment_failed', 'customer.subscription.updated']
+};
+```
+
+#### Instagram (Meta Graph API)
+```typescript
+const instagram = {
+  scopes: ['instagram_basic', 'instagram_content_publish', 'pages_read_engagement'],
+  skills: [
+    'publish_now', 'schedule_post', 'delete_post', 'get_post_status',
+    'get_post_performance', 'get_growth_metrics', 'identify_top_content',
+    'draft_dm_response', 'send_dm', 'find_hashtags', 'brand_voice_extract'
+  ],
+  account_types: {
+    business_creator: ['all skills'],
+    personal: ['draft_dm_response', 'generate_*']  // No publishing
+  }
+};
+```
+
+#### WhatsApp Business API
+```typescript
+const whatsapp = {
+  skills: ['send_whatsapp', 'send_reminder', 'ask_question', 'present_options',
+           'send_check_in', 'send_session_reminder', 'gather_testimonials'],
+  message_types: ['text', 'interactive_buttons', 'interactive_list', 'template']
+};
+```
+
+#### Canva Connect
+```typescript
+const canva = {
+  scopes: ['design:read', 'design:write'],
+  skills: ['generate_carousel'],  // Deep Canva template integration
+  fallback: 'Manual template links if not connected'
+};
+```
+
+---
+
+### Skill Capability Matrix by Account Type
+
+| Capability | Business IG | Personal IG | No IG |
+|------------|-------------|-------------|-------|
+| Content generation | ✓ | ✓ | ✓ |
+| Schedule post | ✓ | ✗ → set_reminder | ✗ |
+| Publish now | ✓ | ✗ → copy_to_clipboard | ✗ |
+| Get analytics | ✓ | ✗ | ✗ |
+| Voice learning (API) | ✓ | ✗ | ✗ |
+| Voice learning (manual) | ✓ | ✓ | ✓ |
+| DM responses | ✓ | ✓ | ✗ |
+
+---
+
+### MVP Skill Summary
+
+**Total Skills: ~110**
+
+| Category | MVP Skills | Post-MVP | Future |
+|----------|-----------|----------|--------|
+| Strategy | 3 | 6 | 3 |
+| Marketing - Content | 12 | 5 | 0 |
+| Marketing - SEO | 2 | 3 | 2 |
+| Marketing - Email | 0 | 5 | 2 |
+| Marketing - Paid | 0 | 2 | 3 |
+| Marketing - Growth | 0 | 3 | 3 |
+| Sales | 1 | 9 | 0 |
+| Client Ops | 3 | 15 | 0 |
+| Billing | 4 | 7 | 1 |
+| Calendar | 5 | 4 | 0 |
+| Communication | 4 | 8 | 1 |
+| Analytics | 2 | 6 | 2 |
+| Learning | 0 | 4 | 2 |
+| **Total** | **36** | **77** | **19** |
+
+**MVP Integrations Required:**
+- Instagram Graph API (Business/Creator accounts)
+- Google Calendar
+- Stripe (basic invoicing)
+- WhatsApp Business API (or web chat fallback)
+
+**Post-MVP Integrations:**
+- Gmail
+- Google Docs
+- Google Sheets
+- Canva Connect
+- Full Stripe (subscriptions)
+
+---
+
 ## Future Roadmap (Post-MVP)
 
 ### Phase 2: Expand Platform
