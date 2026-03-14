@@ -840,6 +840,70 @@
                     </div>
                 </div>
             </div>
+
+            <div class="card">
+                <h2>Cross-Channel Consistency (WhatsApp + Web)</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    Coaches can use WhatsApp and web chat interchangeably. Messages sync seamlessly.
+                </p>
+                <div class="flow">
+                    <div class="flow-step" style="background: #25D366; border-color: #25D366;">WhatsApp</div>
+                    <span class="flow-arrow">↘</span>
+                    <div class="flow-step primary">Single conversation_messages<br><small>(monotonic IDs)</small></div>
+                    <span class="flow-arrow">↙</span>
+                    <div class="flow-step secondary">Web Chat</div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1rem;">
+                    <div style="background: var(--bg); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong style="color: var(--primary);">Monotonic Ordering</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">Auto-increment message IDs</div>
+                    </div>
+                    <div style="background: var(--bg); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong style="color: var(--secondary);">Nudge Deduplication</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">Once sent, mark as delivered</div>
+                    </div>
+                    <div style="background: var(--bg); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong style="color: var(--warning);">Active Channel Detection</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">Track last_active_channel</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Multi-Tenancy & Data Isolation</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    Shared orchestration with per-request context loading. Row-Level Security (RLS) enforces tenant isolation at the database level.
+                </p>
+                <div class="architecture" style="margin: 1rem 0;">
+                    <div class="arch-layer">
+                        <h4>Shared Infrastructure</h4>
+                        <div class="arch-item">Stateless API routes</div>
+                        <div class="arch-item">AI orchestration layer</div>
+                        <div class="arch-item">Background job system</div>
+                    </div>
+                    <div class="arch-layer highlight">
+                        <h4>Per-Request Context</h4>
+                        <div class="arch-item">Load coach_id from JWT</div>
+                        <div class="arch-item">Fetch brand voice + prefs</div>
+                        <div class="arch-item">Retrieve relevant KB items</div>
+                    </div>
+                    <div class="arch-layer">
+                        <h4>Database RLS</h4>
+                        <div class="arch-item">coach_id = auth.uid()</div>
+                        <div class="arch-item">Enforced on every query</div>
+                        <div class="arch-item">Cannot leak cross-tenant</div>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem; padding: 1rem; background: var(--bg); border-radius: 0.5rem;">
+                    <h4 style="color: var(--secondary); margin-bottom: 0.5rem;">Defense in Depth</h4>
+                    <ul style="font-size: 0.875rem; color: var(--text-muted); padding-left: 1rem; margin: 0;">
+                        <li><strong>Layer 1:</strong> JWT validation extracts coach_id</li>
+                        <li><strong>Layer 2:</strong> RLS policies on all tables</li>
+                        <li><strong>Layer 3:</strong> Application-level coach_id WHERE clauses</li>
+                        <li><strong>Layer 4:</strong> Audit logging for sensitive operations</li>
+                    </ul>
+                </div>
+            </div>
         </div>
 
         <!-- User Flow Tab -->
@@ -929,14 +993,15 @@
                     </div>
 
                     <div class="entity">
-                        <div class="entity-header">Content</div>
+                        <div class="entity-header">Content (UPDATED)</div>
                         <div class="entity-fields">
                             <div class="field"><span class="field-name">id</span><span class="field-type">uuid</span></div>
                             <div class="field"><span class="field-name">coach_id</span><span class="field-type">fk</span></div>
                             <div class="field"><span class="field-name">type</span><span class="field-type">enum</span></div>
                             <div class="field"><span class="field-name">current_revision_id</span><span class="field-type">fk</span></div>
                             <div class="field"><span class="field-name">status</span><span class="field-type">enum</span></div>
-                            <div class="field"><span class="field-name">scheduled_at</span><span class="field-type">timestamp</span></div>
+                            <div class="field" style="background: rgba(16, 185, 129, 0.1);"><span class="field-name">scheduled_local_time</span><span class="field-type">TIME</span></div>
+                            <div class="field" style="background: rgba(16, 185, 129, 0.1);"><span class="field-name">scheduled_date</span><span class="field-type">DATE</span></div>
                             <div class="field"><span class="field-name">external_id</span><span class="field-type">string?</span></div>
                         </div>
                     </div>
@@ -1155,22 +1220,47 @@
             </div>
 
             <div class="card">
-                <h2>Per-Coach Timezone Scheduling</h2>
+                <h2>DST-Safe Timezone Scheduling</h2>
                 <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
-                    Inngest crons run globally (UTC). Per-coach scheduling uses hourly sweep + runAt events.
+                    Store local time, materialize UTC just-in-time. Never pre-schedule &gt;2 hours ahead.
                 </p>
                 <div class="flow">
-                    <div class="flow-step">scheduler-sweep<br><small>(hourly UTC)</small></div>
+                    <div class="flow-step">Store Local Time<br><small>(scheduled_local_time)</small></div>
                     <span class="flow-arrow">→</span>
-                    <div class="flow-step">Calculate Local Times</div>
+                    <div class="flow-step">scheduler-sweep<br><small>(hourly)</small></div>
                     <span class="flow-arrow">→</span>
-                    <div class="flow-step primary">inngest.send()<br><small>{ runAt: UTC timestamp }</small></div>
+                    <div class="flow-step warning">Convert to UTC<br><small>(handles DST)</small></div>
                     <span class="flow-arrow">→</span>
-                    <div class="flow-step secondary">Per-Coach Event</div>
+                    <div class="flow-step primary">inngest.send()<br><small>(&lt;2hr timer)</small></div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+                    <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); padding: 0.75rem; border-radius: 0.5rem;">
+                        <strong style="color: var(--danger);">Before (Broken)</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Pre-schedule with fixed UTC → DST shift breaks timing</div>
+                    </div>
+                    <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid var(--secondary); padding: 0.75rem; border-radius: 0.5rem;">
+                        <strong style="color: var(--secondary);">After (DST-Safe)</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Store local + timezone → Convert just-in-time</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Inngest Outage Fallback</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    Graceful degradation when Inngest is unavailable.
+                </p>
+                <div class="flow">
+                    <div class="flow-step">Health Check<br><small>(every 5 min)</small></div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step" style="border-color: var(--danger);">Inngest Down<br><small>&gt;15 min</small></div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step warning">Pause Auto-Post</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step secondary">Manual Mode</div>
                 </div>
                 <div style="margin-top: 1rem; padding: 1rem; background: var(--bg); border-radius: 0.5rem; font-size: 0.875rem;">
-                    <strong>Example:</strong> Coach in PST approves post for "Tuesday 9am" →
-                    Calculate UTC timestamp → <code>inngest.send({ runAt: "2026-03-17T17:00:00Z" })</code>
+                    <strong>Fallback behavior:</strong> Jobs queued in <code>pending_jobs</code> table → Surface "Post Now" button → Replay on recovery
                 </div>
             </div>
         </div>
@@ -1485,6 +1575,12 @@
                     <div class="flow-step primary">Include in Prompt</div>
                 </div>
                 <h3>Consent Filter (Critical for Content Generation)</h3>
+                <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); padding: 0.75rem; border-radius: 0.5rem; margin-top: 1rem; margin-bottom: 1rem;">
+                    <strong style="color: var(--danger);">Consent Enforcement (Blocks, not just flags)</strong>
+                    <div style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.5rem;">
+                        If <code>consent_given_at IS NULL</code> → Block usage, prompt: "This testimonial needs consent confirmation before posting"
+                    </div>
+                </div>
                 <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
                     <tr style="border-bottom: 1px solid var(--border);">
                         <th style="text-align: left; padding: 0.75rem; color: var(--text-muted);">Item Type</th>
@@ -1596,7 +1692,19 @@
                             <div class="field"><span class="field-name">program_id</span><span class="field-type">FK</span></div>
                             <div class="field"><span class="field-name">image_path, video_path</span><span class="field-type">VARCHAR</span></div>
                             <div class="field"><span class="field-name">approved_for_posting</span><span class="field-type">BOOLEAN</span></div>
+                            <div class="field" style="background: rgba(16, 185, 129, 0.1);"><span class="field-name">consent_given_at</span><span class="field-type">TIMESTAMP</span></div>
+                            <div class="field" style="background: rgba(16, 185, 129, 0.1);"><span class="field-name">consent_method</span><span class="field-type">VARCHAR</span></div>
                             <div class="field"><span class="field-name">embedding</span><span class="field-type">vector(1536)</span></div>
+                        </div>
+                    </div>
+                    <div class="entity">
+                        <div class="entity-header new">ConsentAudit (NEW)</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">item_type</span><span class="field-type">VARCHAR</span></div>
+                            <div class="field"><span class="field-name">item_id</span><span class="field-type">UUID</span></div>
+                            <div class="field"><span class="field-name">action</span><span class="field-type">granted | revoked | used</span></div>
+                            <div class="field"><span class="field-name">content_id</span><span class="field-type">FK (nullable)</span></div>
+                            <div class="field"><span class="field-name">created_at</span><span class="field-type">TIMESTAMP</span></div>
                         </div>
                     </div>
                 </div>
