@@ -79,11 +79,12 @@ Create space and time for coaches to do what they do best—coach—by automatin
 - Ensures posts scheduled minutes ahead are never missed
 
 **Content posts stored with local time:**
-  1. Coach approves post for "Tuesday 9am" → Store as `scheduled_local_time` + `coach_timezone`
-  2. **Immediately** fire Inngest timer (Path A)
+  1. Coach approves post for "Tuesday 9am" → Store as `scheduled_local_time` + `scheduled_date` + `scheduled_timezone` (snapshot at approval)
+  2. **Immediately** fire Inngest timer (Path A) if within 2 hours
   3. Sweep validates and corrects if needed (Path B)
-  4. **Never pre-schedule jobs more than 2 hours ahead** (DST changes only affect future conversions)
-- For per-coach events (reminders, silence checks): Same pattern - store local, materialize UTC just-in-time
+  4. **Clarification on 2-hour limit:** Coaches CAN schedule posts for any future date (weekly calendar). The 2-hour limit applies only to *materializing Inngest timers*—we don't create timers for posts >2 hours away. The sweep continuously materializes timers as posts enter the 2-hour window.
+  5. **Timezone snapshot:** `scheduled_timezone` is captured at approval time and never changes. If coach travels or updates their profile timezone, already-scheduled posts are unaffected.
+- For per-coach events (reminders, silence checks): Same pattern - store local + timezone snapshot, materialize UTC just-in-time
 
 **Calendar Sync Conflict Resolution:**
 - Fetch current calendar state with ETags before writing
@@ -170,6 +171,11 @@ When coach uses both WhatsApp and web chat:
 - **Single conversation:** Both channels read/write same `conversation_messages` table
 - **Monotonic ordering:** Messages have auto-increment ID; always display in ID order
 - **Channel attribution:** Each message stores `channel` (whatsapp/web_chat) for context
+- **Idempotency keys:** Prevent duplicate messages from webhook retries
+  - Each message stores `channel_message_id` (e.g., WhatsApp's `wamid`, web chat UUID)
+  - Unique constraint: `UNIQUE(coach_id, channel, channel_message_id)`
+  - On webhook retry, INSERT with ON CONFLICT DO NOTHING
+  - This prevents race conditions where same message is inserted twice
 - **Read state sync:** `last_read_message_id` per channel; unread count calculated per channel
 - **Proactive nudge deduplication:**
   - Nudges stored in `pending_nudges` table with `sent_via` channel
@@ -263,6 +269,14 @@ Moderation runs at **three checkpoints** to prevent bypass:
 - If Red: Block, notify coach, require explicit approval
 - If Yellow without attestation: Block, request attestation
 - If mismatch in revision: Re-run classification
+
+**Fail-Closed Moderation (Safety Default):**
+- If OCR/Vision API fails (timeout, quota, outage): **Block posting**, do not fail open
+- If LLM classification fails: **Block posting**, alert coach
+- If any moderation stage exceeds SLA (>30 seconds): **Block posting**, retry later
+- Blocked posts surface in activity log with "Moderation unavailable - manual review required"
+- Coach can manually approve blocked posts via web portal
+- Never auto-post content that hasn't passed all moderation stages
 
 ### Recovery & Audit Trail
 **Versioned Content Model:**
@@ -427,7 +441,7 @@ Coaches with personal accounts can still get value:
 | `post-content` | Scheduled time | 3 retries, exponential backoff |
 | `refresh-token` | Cron: daily, filter by expiry | 5 retries over 24 hours |
 | `sync-calendar` | Cron: every 15 minutes | 3 retries |
-| `scheduler-sweep` | Cron: hourly | 3 retries |
+| `scheduler-sweep` | Cron: every 10 minutes | 3 retries |
 | `check-silence` | Event: triggered by scheduler-sweep per coach | No retry |
 | `send-reminder` | Scheduled time | 3 retries |
 | `process-webhook` | Event: webhook received | 5 retries |
@@ -818,13 +832,23 @@ Testimonial (for content)
 - AI interactions counted per conversation turn, not per API call
 - Failed posts are not billed (billable: false)
 
+**Quota Tracking (Base Plan Allowances):**
+- Each subscription tier has included quantities: Base = 30 posts/month, Growth = 100 posts/month
+- Track `quota_used` per coach per billing period (reset on subscription renewal)
+- `billable_overage = max(0, total_usage - plan_allowance)`
+- Only report overage to Stripe, not included usage
+- Display quota status in web portal: "23/30 posts used this month"
+- Proactive nudge when approaching limit: "You've used 27 of 30 included posts"
+
 **Data Model Support:**
 - `undo_window_expires_at`: Timestamp when 1-hour grace period ends
 - `undo_of`: FK linking compensating event to original
 - `billable`: False for failed actions, system events
+- `CoachQuota`: { coach_id, period_start, period_end, posts_used, ai_interactions_used }
 
 **Reconciliation (weekly):**
 - Sum UsageEvents by coach for billing period
+- Subtract plan allowance to compute overages
 - Compare with Stripe usage records
 - Log discrepancies > 1% to alerts channel
 
