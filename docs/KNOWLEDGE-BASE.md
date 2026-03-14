@@ -173,12 +173,26 @@ CREATE TABLE testimonials (
   image_path VARCHAR(500), -- Before/after, screenshot
   video_path VARCHAR(500),
 
-  -- Permissions
+  -- Consent & Permissions (enforced, not just flags)
   approved_for_posting BOOLEAN DEFAULT false,
+  consent_given_at TIMESTAMP, -- When coach confirmed consent
+  consent_method VARCHAR(50), -- 'upload_checkbox', 'chat_confirmation', 'portal_approval'
+  client_consent_proof VARCHAR(500), -- Optional: path to signed release form
 
   -- For RAG
   embedding vector(1536),
 
+  created_at TIMESTAMP
+);
+
+-- Consent audit log (tracks all consent decisions)
+CREATE TABLE consent_audit (
+  id UUID PRIMARY KEY,
+  coach_id UUID REFERENCES coaches(id),
+  item_type VARCHAR(50), -- 'testimonial', 'knowledge_item', 'client_photo'
+  item_id UUID,
+  action VARCHAR(50), -- 'granted', 'revoked', 'used_in_content'
+  content_id UUID REFERENCES content(id), -- If used in content, link to it
   created_at TIMESTAMP
 );
 ```
@@ -273,10 +287,19 @@ When Juno generates content or responds to a request, it automatically pulls rel
    ├── If task is content_generation:
    │   ├── Exclude items where usable_in_content = false
    │   ├── Exclude items where contains_client_pii = true (unless explicitly requested)
+   │   ├── Exclude testimonials where consent_given_at IS NULL (consent never recorded)
    │   ├── Flag items where requires_explicit_approval = true → ask coach before using
    │   └── Cross-check with moderation tier (Yellow/Red items get extra scrutiny)
    └── If task is internal_reference or coach_response:
        └── Include all relevant items (coach is the audience, not public)
+
+3b. Consent Enforcement (blocks content generation if missing)
+   ├── If testimonial/photo lacks consent_given_at:
+   │   └── Block usage, prompt: "This testimonial needs consent confirmation before posting"
+   ├── On consent granted:
+   │   └── Log to consent_audit table with timestamp
+   └── On content published with consented item:
+       └── Log to consent_audit with content_id for audit trail
 
 4. Rank & Filter
    ├── Relevance score (embedding similarity)

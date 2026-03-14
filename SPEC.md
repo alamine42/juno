@@ -61,12 +61,16 @@ Create space and time for coaches to do what they do best—coach—by automatin
 - DST transitions: Re-calculate scheduled times on DST change, notify coach of shifts
 - Token expiration: Proactive refresh 7 days before expiry, alert if refresh fails
 
-**Per-Coach Timezone Scheduling:**
+**Per-Coach Timezone Scheduling (DST-Safe):**
 - Inngest crons run globally (UTC), not per-timezone
 - `scheduler-sweep` job runs hourly, calculates which coaches need actions based on local time
-- For per-coach events (reminders, silence checks): Use `inngest.send()` with `runAt` timestamp
-- Content posts: Schedule as one-off Inngest events with exact UTC timestamp when content is approved
-- Example: Coach in PST approves post for "Tuesday 9am" → Calculate UTC timestamp → `inngest.send({ runAt: utcTimestamp })`
+- **Content posts stored with local time, materialized to UTC just-in-time:**
+  1. Coach approves post for "Tuesday 9am" → Store as `scheduled_local_time` + `coach_timezone`
+  2. `scheduler-sweep` (hourly) queries posts where local time is within next 2 hours
+  3. Convert to current UTC using coach's timezone (handles DST automatically)
+  4. Fire `inngest.send({ runAt: utcTimestamp })` with short-lived timer
+  5. **Never pre-schedule jobs more than 2 hours ahead** (DST changes only affect future conversions)
+- For per-coach events (reminders, silence checks): Same pattern - store local, materialize UTC just-in-time
 
 **Calendar Sync Conflict Resolution:**
 - Fetch current calendar state with ETags before writing
@@ -147,6 +151,21 @@ If WhatsApp Business API approval is delayed, the web portal includes a native c
 - Browser notifications less reliable than WhatsApp
 - No voice messages (WhatsApp supports, web chat doesn't)
 - Slight latency increase vs. WhatsApp (~500ms vs. instant)
+
+**Cross-Channel Consistency (Multi-Channel Sync):**
+When coach uses both WhatsApp and web chat:
+- **Single conversation:** Both channels read/write same `conversation_messages` table
+- **Monotonic ordering:** Messages have auto-increment ID; always display in ID order
+- **Channel attribution:** Each message stores `channel` (whatsapp/web_chat) for context
+- **Read state sync:** `last_read_message_id` per channel; unread count calculated per channel
+- **Proactive nudge deduplication:**
+  - Nudges stored in `pending_nudges` table with `sent_via` channel
+  - Once sent on any channel, mark as delivered
+  - Never send same nudge twice across channels
+- **Active channel detection:** Track `last_active_channel` + `last_active_at`
+  - If coach active on web chat in last 5 min, suppress WhatsApp nudge
+  - If no activity, prefer WhatsApp (higher delivery rate)
+- **Handoff indicators:** Show "sent via web chat" / "sent via WhatsApp" badges
 
 ---
 
@@ -386,6 +405,18 @@ Coaches with personal accounts can still get value:
 - Alert coach via WhatsApp/email if posting fails
 - Alert via email if WhatsApp/web chat delivery fails
 
+**Inngest Outage Fallback (Single Point of Failure Mitigation):**
+- All pending actions stored in `pending_jobs` table before sending to Inngest
+- Mark job as `dispatched` when Inngest accepts, `completed` when done
+- Health check: Vercel cron (every 5 min) checks Inngest API status
+- If Inngest unhealthy for >15 minutes:
+  1. Pause autonomous posting (mark coach for manual mode)
+  2. Alert coaches: "Auto-posting paused, manual posting available"
+  3. Surface "Post Now" button in web portal for pending content
+  4. Queue jobs in DB; replay when Inngest recovers
+- Recovery: On Inngest healthy, replay `pending` jobs from DB
+- Monitoring: Alert ops team if Inngest down >30 minutes
+
 **Cost Projection:**
 | Scale | Steps/month | Cost |
 |-------|-------------|------|
@@ -516,7 +547,10 @@ Content
 ├── type (post, reel, story, carousel)
 ├── current_revision_id (FK to ContentRevision)
 ├── status (draft, scheduled, posted, failed, deleted)
-├── scheduled_at, posted_at
+├── scheduled_local_time (TIME - e.g., "09:00", for DST-safe scheduling)
+├── scheduled_date (DATE - e.g., "2026-03-17")
+├── scheduled_at (TIMESTAMP - computed UTC, updated by scheduler-sweep)
+├── posted_at
 ├── platform (instagram)
 ├── external_id (Instagram post ID, nullable)
 ├── performance_metrics (JSON)
@@ -826,6 +860,38 @@ General AI assistants (ChatGPT, Claude)
 - Clear data deletion workflow
 - No training on coach data without consent
 
+### Multi-Tenancy & Data Isolation
+
+**Row-Level Security (RLS):**
+Every table enforces tenant isolation at database level:
+```sql
+CREATE POLICY "coach_isolation" ON content FOR ALL USING (coach_id = auth.uid());
+CREATE POLICY "coach_isolation" ON conversations FOR ALL USING (coach_id = auth.uid());
+CREATE POLICY "coach_isolation" ON knowledge_items FOR ALL USING (coach_id = auth.uid());
+-- Applied to ALL coach-scoped tables
+```
+
+**Defense in Depth:**
+| Layer | Protection |
+|-------|------------|
+| Database | RLS policies on every table (even if app has bugs) |
+| API | Validate `coach_id` matches JWT on every request |
+| Cache | Redis keys namespaced: `coach:{id}:*` |
+| Background Jobs | Jobs scoped to single `coach_id`, never batched across coaches |
+| LLM Prompts | Context loaded per-coach, never mixed |
+
+**Cross-Pollination Prevention:**
+- Vector search queries always include `WHERE coach_id = $1`
+- Memory consolidation runs per-coach in isolated transactions
+- Embedding queries filtered before similarity calculation
+- Logging scrubs PII; uses IDs only
+
+**Personalized Agent Identity:**
+Each coach can customize their agent:
+- `agent_name` (default: "Juno", customizable)
+- `agent_personality` (additional persona traits)
+- Agent "remembers" coach via loaded context on each request
+
 ---
 
 ## Risks & Mitigations
@@ -846,6 +912,17 @@ General AI assistants (ChatGPT, Claude)
 ---
 
 ## MVP Milestones (8 Weeks)
+
+**Timeline Reality Check:**
+This is an aggressive timeline for a solo founder. Priorities if behind schedule:
+1. **Must ship:** Chat + content generation + manual posting (copy-paste workflow)
+2. **Should ship:** Auto-posting + basic scheduling + moderation
+3. **Can defer to post-MVP:** Knowledge base uploads, analytics dashboard, memory consolidation
+
+**De-risking strategy:**
+- Week 1-4: Build end-to-end slice (chat → content → manual post)
+- Week 5-6: Add automation layer (scheduling, auto-post)
+- Week 7-8: Hardening + billing (defer analytics if needed)
 
 ### Week 1: Foundation
 - [ ] Next.js project setup with TypeScript
