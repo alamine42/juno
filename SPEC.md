@@ -166,6 +166,34 @@ If WhatsApp Business API approval is delayed, the web portal includes a native c
 - No voice messages (WhatsApp supports, web chat doesn't)
 - Slight latency increase vs. WhatsApp (~500ms vs. instant)
 
+**Accessibility Requirements (Web Chat):**
+- **Keyboard navigation:** All quick-reply buttons accessible via Tab, activated via Enter/Space
+- **Screen reader support:** ARIA roles (`role="log"` for message list, `role="button"` for actions)
+- **Focus management:** Auto-focus input after sending; announce new messages to screen readers
+- **High contrast mode:** Respect `prefers-contrast` media query
+- **Reduced motion:** Respect `prefers-reduced-motion` for typing indicators, animations
+
+**UI States (explicitly defined):**
+| State | Visual | Behavior |
+|-------|--------|----------|
+| Loading history | Skeleton messages | Fetch last 50 messages, then paginate |
+| Empty conversation | Welcome message + suggested actions | Show "Ask Juno anything" prompt |
+| Sending message | Optimistic UI + spinner | Rollback on error |
+| Send failed | Red badge + "Retry" button | Queue offline, retry on reconnect |
+| Connection lost | Yellow banner "Reconnecting..." | Auto-retry with backoff, fall back to polling |
+| Juno typing | Animated dots | `aria-live="polite"` for screen readers |
+
+**Offline & Resilience:**
+- **Message queue:** If offline, queue messages in localStorage, send on reconnect
+- **Retry banner:** "Some messages couldn't send. [Retry] [Discard]"
+- **Reconnection:** Exponential backoff (1s, 2s, 4s, max 30s), auto-reconnect on network change
+- **Stale tab:** If tab inactive >5 min and reconnects, fetch missed messages before resuming
+
+**Notification Fallbacks:**
+- If browser push denied: Offer email notification opt-in for urgent messages
+- Email fallback: "Juno needs your attention" with deep link to web chat
+- SMS fallback (future): Phone number already captured for WhatsApp linking
+
 **Cross-Channel Consistency (Multi-Channel Sync):**
 When coach uses both WhatsApp and web chat:
 - **Single conversation:** Both channels read/write same `conversation_messages` table
@@ -271,12 +299,38 @@ Moderation runs at **three checkpoints** to prevent bypass:
 - If mismatch in revision: Re-run classification
 
 **Fail-Closed Moderation (Safety Default):**
-- If OCR/Vision API fails (timeout, quota, outage): **Block posting**, do not fail open
-- If LLM classification fails: **Block posting**, alert coach
-- If any moderation stage exceeds SLA (>30 seconds): **Block posting**, retry later
+
+**Staged Retry Strategy (before declaring failure):**
+1. First attempt: 10s timeout
+2. Retry 1: 15s timeout, exponential backoff (wait 2s)
+3. Retry 2: 20s timeout, exponential backoff (wait 4s)
+4. After 3 failures: Declare "moderation unavailable"
+
+**Moderation Result Caching:**
+- Cache moderation results per `content_revision_id` (not per content)
+- If revision unchanged and cache hit: Use cached tier, skip re-moderation
+- Cache TTL: 24 hours (re-moderate if approaching posting time and cache stale)
+- Cache invalidated on any content edit (new revision = new cache key)
+
+**Tiered Failure Response (not all failures are equal):**
+| Content Tier | Infrastructure Failure | Response |
+|--------------|----------------------|----------|
+| **Green** (previously classified) | OCR/LLM timeout | Allow posting with warning: "Moderation skipped, using cached result" |
+| **Green** (never classified) | OCR/LLM timeout | Block, retry queue |
+| **Yellow + attested** | OCR/LLM timeout | Allow with warning if previous revision was Yellow |
+| **Yellow/Red or unknown** | Any failure | Block, require manual review |
+
+**Failure Handling:**
+- If OCR/Vision API fails after retries: Check cache → if Green, allow with warning; otherwise block
+- If LLM classification fails after retries: Check cache → if Green, allow with warning; otherwise block
 - Blocked posts surface in activity log with "Moderation unavailable - manual review required"
 - Coach can manually approve blocked posts via web portal
-- Never auto-post content that hasn't passed all moderation stages
+- Never auto-post Red-tier or unclassified content without moderation
+
+**Degraded Mode Messaging:**
+- Chat: "I couldn't verify this post meets guidelines. [Post Anyway] [Wait for Review]"
+- Web portal: Banner "Moderation temporarily unavailable" with manual approve button
+- Track degraded mode events for ops alerting
 
 ### Recovery & Audit Trail
 **Versioned Content Model:**
@@ -459,23 +513,36 @@ Coaches with personal accounts can still get value:
 - Alert via email if WhatsApp/web chat delivery fails
 
 **Inngest Outage Fallback (Single Point of Failure Mitigation):**
+
+**Scheduling Intent Persistence (Critical for Outage Recovery):**
+- **At approval time:** Write to `scheduled_posts` table with `desired_execution_at`, regardless of 2hr timer window
+- Every approved post has a persistent record: `{ content_id, desired_execution_at, timer_status: pending|dispatched|executed }`
+- The 2hr timer materialization window only controls when Inngest timers are created, not when intent is recorded
+- This ensures posts approved days ahead survive Inngest outages that occur when they enter the execution window
+
+**Job Tracking:**
 - All pending actions stored in `pending_jobs` table before sending to Inngest
 - Store `desired_execution_at` (original intended timestamp) on each job
 - Mark job as `dispatched` when Inngest accepts, `completed` when done
 - Health check: Vercel cron (every 5 min) checks Inngest API status
+
+**Outage Detection & Response:**
 - If Inngest unhealthy for >15 minutes:
   1. Pause autonomous posting (mark coach for manual mode)
   2. Alert coaches: "Auto-posting paused, manual posting available"
   3. Surface "Post Now" button in web portal for pending content
-  4. Queue jobs in DB with original timestamps preserved
-- **Recovery with catch-up logic:**
-  1. On Inngest healthy, query all `pending` jobs from DB
+  4. Continue recording scheduling intent to `scheduled_posts` table
+
+**Recovery with catch-up logic:**
+  1. On Inngest healthy, query `scheduled_posts` where `timer_status != executed` AND `desired_execution_at` has passed or is within 2hr
   2. For each missed job (where `desired_execution_at < now`):
      - If missed by <2 hours AND coach pre-approved: Execute immediately (backfill)
      - If missed by <2 hours AND not pre-approved: Ask coach "Post now or reschedule?"
      - If missed by >2 hours: Notify coach, offer reschedule to next optimal slot
-  3. For future jobs: Re-dispatch to Inngest normally
+  3. For future jobs entering 2hr window: Create Inngest timers normally
   4. Surface recovery summary: "3 posts were delayed, 2 posted now, 1 needs your input"
+  5. Mark recovered posts as `timer_status: dispatched` or `executed`
+
 - Monitoring: Alert ops team if Inngest down >30 minutes
 
 **Cost Projection:**
@@ -718,19 +785,23 @@ ContentModeration
 ├── reviewed_at
 └── created_at
 
-Conversation
+Conversation (channel-agnostic - one per coach)
 ├── id, coach_id
-├── channel (whatsapp, web_chat)
 ├── started_at, last_message_at
+├── last_active_channel (whatsapp, web_chat)
+├── last_active_at
 └── context (JSON - current task, pending actions)
 
 ConversationMessage (normalized for scale + realtime)
 ├── id, conversation_id
+├── channel (whatsapp, web_chat) -- channel stored per-message, not per-conversation
+├── channel_message_id (external ID for idempotency: wamid for WhatsApp, UUID for web)
 ├── role (user, assistant, system)
 ├── content (text)
 ├── metadata (JSON - buttons, attachments, etc.)
 ├── created_at
 └── deleted_at (nullable - for GDPR "forget")
+-- UNIQUE(conversation_id, channel, channel_message_id) for webhook retry safety
 
 Action
 ├── id, coach_id
@@ -949,9 +1020,13 @@ Real-world disputes happen after the undo window closes. Handle gracefully:
 2. **Dispute statuses:** `open` → `under_review` → `approved` | `denied`
 
 3. **If dispute approved:**
-   - Write compensating UsageEvent with `dispute_id` reference
-   - If already reported to Stripe: Create Stripe credit/adjustment
-   - Store `stripe_credit_id` on dispute record for audit trail
+   - Write compensating UsageEvent with `dispute_id` reference and `quantity: -1`
+   - **Stripe Adjustment Mechanism:**
+     - Option A (preferred): Create invoice credit via `stripe.customers.createBalanceTransaction({ amount: -X, currency, description })`
+     - Option B: If usage not yet invoiced, create negative UsageRecord via `stripe.subscriptionItems.createUsageRecord({ quantity: -1, action: 'set' })`
+     - Store `stripe_adjustment_id` (balance transaction or usage record ID) on dispute record
+   - **Reconciliation sync:** Internal ledger must equal Stripe:
+     - `sum(UsageEvents.quantity)` = `sum(Stripe UsageRecords)` - `sum(Stripe BalanceTransactions)`
    - Notify coach: "Your dispute was approved, credit applied"
 
 4. **If dispute denied:**
@@ -971,8 +1046,14 @@ Real-world disputes happen after the undo window closes. Handle gracefully:
 
 7. **Reconciliation handles disputes:**
    - `reconcile-billing` job includes dispute credits in totals
-   - Ensures Stripe records match UsageEvents + BillingDispute credits
-- Generate monthly reconciliation report
+   - **Reconciliation formula:**
+     ```
+     internal_total = sum(UsageEvents.quantity WHERE billable=true)
+     stripe_total = sum(UsageRecords) - sum(BalanceTransactions WHERE type='adjustment')
+     discrepancy = abs(internal_total - stripe_total)
+     if discrepancy > threshold: alert ops team
+     ```
+   - Generate monthly reconciliation report with line-item breakdown
 
 **Edge Cases:**
 | Scenario | Handling |
@@ -1108,7 +1189,48 @@ Each coach can customize their agent:
 This is an aggressive timeline for a solo founder. Priorities if behind schedule:
 1. **Must ship:** Chat + content generation + manual posting (copy-paste workflow)
 2. **Should ship:** Auto-posting + basic scheduling + moderation
-3. **Can defer to post-MVP:** Knowledge base uploads, analytics dashboard, memory consolidation
+3. **Can defer to post-MVP:** Knowledge base uploads, analytics dashboard, memory consolidation, hybrid search refinement
+
+**Critical Task Dependencies:**
+```
+Week 1: Foundation
+  └── Auth, DB, Inngest setup
+  └── START: WhatsApp + Canva approvals (external, non-blocking)
+
+Week 2: Web Portal
+  ├── depends on: Week 1 (auth, DB)
+  └── OAuth flows, token management
+
+Week 3: Background Jobs + Search
+  ├── depends on: Week 1 (Inngest), Week 2 (tokens)
+  └── pgvector, scheduling, realtime
+
+Week 4: Content Generation
+  ├── depends on: Week 3 (pgvector, scheduling)
+  └── GATE: Content generation working end-to-end
+
+Week 5: Chat Integration
+  ├── depends on: Week 3 (realtime), Week 4 (content gen)
+  └── CONTINGENCY: If WhatsApp not approved, use web chat only
+
+Week 6: Instagram Posting
+  ├── depends on: Week 4 (content), Week 3 (scheduling)
+  └── GATE: Can auto-post to Instagram
+
+Week 7: Billing
+  ├── depends on: Week 6 (posting = billable events)
+  └── Can defer usage metering if needed (flat rate MVP)
+
+Week 8: Hardening
+  └── depends on: All previous weeks
+```
+
+**External Approval Contingencies:**
+| Approval | Expected | If Delayed | Mitigation |
+|----------|----------|------------|------------|
+| WhatsApp Business API | Week 3-4 | Continue with web chat | Full feature parity in web chat |
+| Canva Connect | Week 4-5 | Launch without Canva | Manual template upload, add Canva post-launch |
+| Instagram Business | Coach-dependent | Degraded mode | Copy-paste workflow, posting reminders |
 
 **De-risking strategy:**
 - Week 1-4: Build end-to-end slice (chat → content → manual post)
