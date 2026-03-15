@@ -408,6 +408,7 @@ Coaches with personal accounts can still get value:
 | Backend | Next.js API Routes |
 | Database | PostgreSQL (Supabase) |
 | Vector DB | pgvector (included in Supabase) → Pinecone (scale) |
+| Search | Hybrid search: PostgreSQL full-text (ts_rank) + pgvector + RRF fusion |
 | Realtime | Supabase Realtime (for web chat) |
 | Cache | Redis (Upstash) |
 | **Background Jobs** | **Inngest** |
@@ -519,8 +520,8 @@ Juno maintains three types of memory per coach:
 | Procedural | Learned patterns (what content works, optimal times) | PostgreSQL metrics |
 
 **Memory Operations:**
-- **Encoding:** Store events, generate embeddings, update derived insights
-- **Retrieval:** Semantic search for relevant context before each generation
+- **Encoding:** Store events, generate embeddings, maintain tsvector for full-text
+- **Retrieval:** Hybrid search (keyword + semantic) for relevant context before each generation
 - **Consolidation:** Daily/weekly summarization of old memories (Inngest crons)
 - **Forgetting:** Prune superseded preferences, archive old embeddings
 
@@ -562,12 +563,95 @@ Coaches can share files, notes, and structured data with Juno. This serves as Ju
 - **WhatsApp/Web Chat:** Send file, Juno asks for context, categorizes and stores
 - **Web Portal:** File manager with folders, tagging, pinning, editing
 
-**Auto-Context Retrieval:**
-When generating content, Juno automatically pulls relevant items:
+**Auto-Context Retrieval (Hybrid Search):**
+When generating content, Juno automatically pulls relevant items using hybrid search:
 1. Pinned items (always included - brand guide, core rules)
-2. Semantic search (embed task, find similar items)
+2. **Hybrid search** combining keyword + semantic (see below)
 3. Entity matching (client names, program names mentioned)
 4. Category matching (content task → brand assets)
+
+**Hybrid Search Architecture:**
+Pure vector search misses exact keyword matches; pure keyword search misses semantic similarity. Hybrid combines both.
+
+```
+Query: "8-week transformation program pricing"
+                    │
+        ┌───────────┴───────────┐
+        ▼                       ▼
+   Full-Text Search        Vector Search
+   (PostgreSQL ts_rank)    (pgvector cosine)
+        │                       │
+        ▼                       ▼
+   Keyword matches:        Semantic matches:
+   - "8-week" exact        - "2-month program"
+   - "pricing" exact       - "cost of training"
+        │                       │
+        └───────────┬───────────┘
+                    ▼
+            Reciprocal Rank Fusion (RRF)
+            score = Σ 1/(k + rank_i)
+                    │
+                    ▼
+            Top-K merged results
+```
+
+**Implementation (Supabase/PostgreSQL):**
+```sql
+-- Add tsvector column for full-text search
+ALTER TABLE knowledge_items ADD COLUMN search_vector tsvector
+  GENERATED ALWAYS AS (
+    setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
+    setweight(to_tsvector('english', coalesce(content, '')), 'B')
+  ) STORED;
+
+CREATE INDEX idx_knowledge_search ON knowledge_items USING GIN(search_vector);
+
+-- Hybrid search function
+CREATE FUNCTION hybrid_search(
+  query_text TEXT,
+  query_embedding vector(1536),
+  coach UUID,
+  match_count INT DEFAULT 10,
+  keyword_weight FLOAT DEFAULT 0.5,
+  rrf_k INT DEFAULT 60
+) RETURNS TABLE(id UUID, score FLOAT) AS $$
+  WITH keyword_results AS (
+    SELECT id, ROW_NUMBER() OVER (ORDER BY ts_rank(search_vector, plainto_tsquery(query_text)) DESC) AS rank
+    FROM knowledge_items
+    WHERE coach_id = coach AND search_vector @@ plainto_tsquery(query_text)
+    LIMIT match_count * 2
+  ),
+  semantic_results AS (
+    SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> query_embedding) AS rank
+    FROM knowledge_items
+    WHERE coach_id = coach
+    ORDER BY embedding <=> query_embedding
+    LIMIT match_count * 2
+  )
+  SELECT
+    COALESCE(k.id, s.id) AS id,
+    (COALESCE(1.0/(rrf_k + k.rank), 0) * keyword_weight +
+     COALESCE(1.0/(rrf_k + s.rank), 0) * (1 - keyword_weight)) AS score
+  FROM keyword_results k
+  FULL OUTER JOIN semantic_results s ON k.id = s.id
+  ORDER BY score DESC
+  LIMIT match_count;
+$$ LANGUAGE SQL;
+```
+
+**Tuning Parameters:**
+| Parameter | Default | Purpose |
+|-----------|---------|---------|
+| `keyword_weight` | 0.5 | Balance keyword vs semantic (0 = pure semantic, 1 = pure keyword) |
+| `rrf_k` | 60 | RRF smoothing constant (higher = more equal weighting across ranks) |
+| `match_count` | 10 | Final results to return |
+
+**When to Favor Keyword vs Semantic:**
+| Query Type | Keyword Weight | Example |
+|------------|----------------|---------|
+| Exact lookups | 0.7-0.8 | "What's my pricing for X program?" |
+| Conceptual | 0.3-0.4 | "Content ideas about motivation" |
+| Mixed | 0.5 | "Posts about client Sarah's progress" |
 
 **Context Budget:** ~1,000 tokens for knowledge base items per request
 
@@ -754,6 +838,7 @@ KnowledgeItem (shared files & notes)
 ├── extracted_text (OCR/PDF extraction)
 ├── ai_description (vision model description for images)
 ├── embedding (vector 1536)
+├── search_vector (tsvector - generated from title + content, GIN indexed)
 ├── tags (text array)
 ├── pinned (boolean - always include in context)
 ├── usable_in_content (boolean - can be used in generated posts)
@@ -769,6 +854,7 @@ Client (structured data)
 ├── notes
 ├── start_date, status (active, paused, completed)
 ├── embedding (vector 1536)
+├── search_vector (tsvector - generated from name + goals + notes)
 └── created_at, updated_at
 
 Program (structured data)
@@ -778,6 +864,7 @@ Program (structured data)
 ├── includes (text array)
 ├── ideal_for, testimonials (text array)
 ├── embedding (vector 1536)
+├── search_vector (tsvector - generated from name + description + ideal_for)
 └── created_at, updated_at
 
 Testimonial (for content)
@@ -1044,12 +1131,14 @@ This is an aggressive timeline for a solo founder. Priorities if behind schedule
 - [ ] Token storage and refresh infrastructure
 - [ ] Fallback content ingestion UI (manual paste, screenshot upload)
 
-### Week 3: Background Jobs + Vector Infrastructure
+### Week 3: Background Jobs + Hybrid Search Infrastructure
 - [ ] Inngest functions: PostContent, RefreshToken, SyncCalendar
 - [ ] Content scheduling system
 - [ ] Calendar sync implementation
 - [ ] **pgvector extension enabled in Supabase**
 - [ ] **Embedding generation pipeline (OpenAI text-embedding-3-small)**
+- [ ] **Full-text search setup (tsvector columns, GIN indexes)**
+- [ ] **Hybrid search function (RRF fusion of keyword + semantic)**
 - [ ] **Supabase Realtime setup for web chat**
 - [ ] Job monitoring dashboard (Inngest provides)
 
@@ -1062,6 +1151,7 @@ This is an aggressive timeline for a solo founder. Priorities if behind schedule
 - [ ] **Memory tables (using pgvector from Week 3)**
 - [ ] **Voice model creation + anchor embeddings**
 - [ ] **KnowledgeItem table + basic CRUD**
+- [ ] **Auto-context retrieval using hybrid search**
 - [ ] **Note upload via chat (text only)**
 - [ ] **Web portal file manager (basic)**
 - [ ] **Start web chat fallback (using Supabase Realtime from Week 3)**
