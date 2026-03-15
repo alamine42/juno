@@ -845,14 +845,18 @@
             <div class="card">
                 <h2>Cross-Channel Consistency (WhatsApp + Web)</h2>
                 <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
-                    Coaches can use WhatsApp and web chat interchangeably. Messages sync seamlessly.
+                    Coaches can use WhatsApp and web chat interchangeably. <strong>Single conversation per coach</strong> (channel-agnostic).
                 </p>
                 <div class="flow">
                     <div class="flow-step" style="background: #25D366; border-color: #25D366;">WhatsApp</div>
                     <span class="flow-arrow">↘</span>
-                    <div class="flow-step primary">Single conversation_messages<br><small>(monotonic IDs)</small></div>
+                    <div class="flow-step primary">Conversation<br><small>(channel-agnostic)</small></div>
                     <span class="flow-arrow">↙</span>
                     <div class="flow-step secondary">Web Chat</div>
+                </div>
+                <div style="margin-top: 0.75rem; padding: 0.5rem; background: rgba(99, 102, 241, 0.1); border: 1px solid var(--primary); border-radius: 0.5rem; font-size: 0.8rem; text-align: center;">
+                    <strong style="color: var(--primary);">Data Model:</strong>
+                    <code>Conversation</code> has no channel column → <code>ConversationMessage.channel</code> stores per-message origin
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-top: 1rem;">
                     <div style="background: var(--bg); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
@@ -878,6 +882,37 @@
                         Each message has <code>channel_message_id</code> (WhatsApp wamid / web UUID).
                         UNIQUE(coach_id, channel, channel_message_id) prevents duplicate inserts on retry.
                     </span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Web Chat Accessibility & Resilience</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    Web chat fallback must be reliable when WhatsApp unavailable. Accessibility-first design.
+                </p>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-bottom: 1rem;">
+                    <div style="background: rgba(99, 102, 241, 0.1); border: 1px solid var(--primary); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong style="color: var(--primary);">Keyboard Nav</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">Tab through all actions</div>
+                    </div>
+                    <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid var(--secondary); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong style="color: var(--secondary);">Screen Readers</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">ARIA roles + live regions</div>
+                    </div>
+                    <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid var(--warning); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong style="color: var(--warning);">High Contrast</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">prefers-contrast support</div>
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem;">
+                    <div style="background: var(--bg); padding: 0.75rem; border-radius: 0.5rem;">
+                        <strong style="color: var(--danger);">Offline Handling:</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">Queue in localStorage, retry banner, auto-reconnect with backoff</div>
+                    </div>
+                    <div style="background: var(--bg); padding: 0.75rem; border-radius: 0.5rem;">
+                        <strong style="color: #8b5cf6;">Notification Fallbacks:</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">Push → Email → SMS (future)</div>
+                    </div>
                 </div>
             </div>
 
@@ -1522,8 +1557,12 @@
             <div class="card">
                 <h2>Inngest Outage Fallback + Recovery</h2>
                 <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
-                    Graceful degradation + intelligent catch-up on recovery.
+                    <strong>Scheduling intent persisted at approval time</strong> (not just within 2hr window). Recovery queries the full intent table.
                 </p>
+                <div style="margin-bottom: 1rem; padding: 0.75rem; background: rgba(99, 102, 241, 0.1); border: 1px solid var(--primary); border-radius: 0.5rem;">
+                    <strong style="color: var(--primary);">scheduled_posts table:</strong>
+                    <code style="font-size: 0.8rem; color: var(--text-muted);">{ content_id, desired_execution_at, timer_status: pending|dispatched|executed }</code>
+                </div>
                 <div class="flow">
                     <div class="flow-step">Health Check<br><small>(every 5 min)</small></div>
                     <span class="flow-arrow">→</span>
@@ -1611,36 +1650,42 @@
             </div>
 
             <div class="card">
-                <h2>Fail-Closed Moderation (Safety Default)</h2>
+                <h2>Fail-Closed Moderation + Degradation Plan</h2>
                 <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
-                    Never auto-post content that hasn't passed all moderation stages. Block on any failure.
+                    Staged retries before blocking. Cache results. Tiered response based on content risk.
                 </p>
                 <div class="flow">
                     <div class="flow-step">Moderation Check</div>
                     <span class="flow-arrow">→</span>
-                    <div class="flow-step" style="border-color: var(--danger);">API Fails?</div>
+                    <div class="flow-step warning">Retry 3x<br><small>(backoff)</small></div>
                     <span class="flow-arrow">→</span>
-                    <div class="flow-step" style="background: rgba(239, 68, 68, 0.2); border-color: var(--danger);"><strong>BLOCK</strong><br><small>Don't fail open</small></div>
+                    <div class="flow-step" style="background: rgba(139, 92, 246, 0.1); border-color: #8b5cf6;">Check Cache</div>
                     <span class="flow-arrow">→</span>
-                    <div class="flow-step warning">Manual Review</div>
+                    <div class="flow-step secondary">Tiered Response</div>
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-top: 1rem;">
-                    <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
-                        <strong style="color: var(--danger);">OCR/Vision Timeout</strong>
-                        <div style="font-size: 0.75rem; color: var(--text-muted);">→ Block, retry later</div>
+                    <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid var(--secondary); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong style="color: var(--secondary);">Green (cached)</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">→ Allow with warning</div>
+                    </div>
+                    <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid var(--warning); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong style="color: var(--warning);">Yellow/Unknown</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">→ Block, manual review</div>
                     </div>
                     <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
-                        <strong style="color: var(--danger);">LLM Classification Fails</strong>
-                        <div style="font-size: 0.75rem; color: var(--text-muted);">→ Block, alert coach</div>
-                    </div>
-                    <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
-                        <strong style="color: var(--danger);">SLA Exceeded (&gt;30s)</strong>
-                        <div style="font-size: 0.75rem; color: var(--text-muted);">→ Block, retry later</div>
+                        <strong style="color: var(--danger);">Red/Never classified</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">→ Always block</div>
                     </div>
                 </div>
-                <div style="margin-top: 1rem; padding: 0.75rem; background: var(--bg); border-radius: 0.5rem; font-size: 0.85rem;">
-                    <strong style="color: var(--warning);">Blocked posts:</strong>
-                    <span style="color: var(--text-muted);">Surface in activity log with "Moderation unavailable - manual review required". Coach can approve via web portal.</span>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
+                    <div style="background: var(--bg); padding: 0.75rem; border-radius: 0.5rem;">
+                        <strong style="color: var(--primary);">Retry Strategy:</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">10s → 15s → 20s with 2s/4s backoff</div>
+                    </div>
+                    <div style="background: var(--bg); padding: 0.75rem; border-radius: 0.5rem;">
+                        <strong style="color: #8b5cf6;">Cache Key:</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">content_revision_id (24h TTL)</div>
+                    </div>
                 </div>
             </div>
 
