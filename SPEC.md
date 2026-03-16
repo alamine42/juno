@@ -1389,6 +1389,12 @@ Skills are sourced from proven frameworks:
 │                                    │                                        │
 │                                    ▼                                        │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                    FITNESS COACHING (Domain-Specific)                 │  │
+│  │  Workouts • Nutrition • Progress • Assessments • Motivation • Content │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                      MEASUREMENT & LEARNING                           │  │
 │  │  Analytics • A/B Testing • Feedback • Retrospectives • Optimization  │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
@@ -1586,6 +1592,101 @@ interface Skill {
 | `answer_program_question` | Explain exercise/nutrition | None | Post-MVP | WhatsApp |
 
 **MVP Client Ops Skills:** `schedule_session`, `reschedule_session`, `cancel_session`
+
+---
+
+### 10. FITNESS COACHING SKILLS (Domain-Specific)
+
+> These skills differentiate Juno for fitness/wellness coaches specifically. They leverage coach expertise while automating delivery.
+
+#### Workout Programming
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `generate_workout` | Create workout from goals/equipment/time | None | Post-MVP | None |
+| `create_training_block` | Design 4-6 week periodization | None | Post-MVP | None |
+| `suggest_exercise_alternative` | Substitute for injury/equipment | None | MVP | None |
+| `calculate_training_volume` | Sets × reps × load recommendations | None | Post-MVP | None |
+| `generate_warmup` | Dynamic warmup for session type | None | MVP | None |
+| `create_superset` | Efficient exercise pairings | None | Post-MVP | None |
+| `scale_workout` | Adjust difficulty up/down | None | MVP | None |
+| `generate_deload_week` | Recovery week programming | None | Post-MVP | None |
+| `create_home_workout` | No-equipment alternatives | None | MVP | None |
+| `build_workout_library` | Organize reusable templates | None | Post-MVP | Google Sheets |
+
+#### Nutrition Planning
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `calculate_macros` | TDEE + macro targets from goals | None | MVP | None |
+| `generate_meal_plan` | Daily/weekly meal structure | None | Post-MVP | None |
+| `create_grocery_list` | Shopping list from meal plan | None | Post-MVP | None |
+| `suggest_meal_prep` | Batch cooking ideas | None | Post-MVP | None |
+| `analyze_food_log` | Review client food diary | None | Post-MVP | None |
+| `suggest_healthy_swap` | Substitute unhealthy foods | None | MVP | None |
+| `calculate_protein_timing` | Pre/post workout nutrition | None | Post-MVP | None |
+| `answer_nutrition_faq` | Common nutrition questions | None | MVP | WhatsApp |
+| `create_hydration_plan` | Water intake recommendations | None | Post-MVP | None |
+| `explain_supplement` | Supplement info (no medical claims) | Low | Post-MVP | None |
+
+**Nutrition Disclaimer:** All nutrition skills include standard disclaimer: "For educational purposes. Consult a registered dietitian for medical nutrition therapy."
+
+#### Progress Tracking
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `log_measurements` | Record body measurements | None | MVP | Google Sheets |
+| `track_weight` | Weight logging with trends | None | MVP | Google Sheets |
+| `log_progress_photo` | Store transformation photos | Low | Post-MVP | Supabase Storage |
+| `calculate_body_composition` | Estimate body fat % (formulas) | None | Post-MVP | None |
+| `analyze_progress` | Trend analysis over time | None | Post-MVP | Google Sheets |
+| `generate_progress_report` | Client progress summary | None | Post-MVP | Google Docs |
+| `compare_progress_photos` | Side-by-side comparison | Low | Post-MVP | None |
+| `log_pr` | Personal record tracking | None | MVP | Google Sheets |
+| `celebrate_milestone` | Acknowledge achievements | None | MVP | WhatsApp |
+| `identify_plateau` | Detect stalled progress | None | Post-MVP | Google Sheets |
+
+#### Fitness Assessments
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `conduct_initial_assessment` | New client questionnaire | None | MVP | None |
+| `assess_fitness_level` | Beginner/intermediate/advanced | None | MVP | None |
+| `screen_movement` | Basic movement assessment | Low | Post-MVP | None |
+| `identify_limitations` | Equipment/time/injury constraints | None | MVP | None |
+| `set_smart_goals` | Goal setting framework | None | MVP | None |
+| `calculate_1rm` | Estimate one-rep max | None | Post-MVP | None |
+| `assess_readiness` | Daily readiness check | None | Post-MVP | None |
+| `evaluate_recovery` | Sleep/stress/soreness check | None | Post-MVP | WhatsApp |
+| `reassess_progress` | Periodic re-evaluation | None | Post-MVP | None |
+
+#### Client Motivation & Accountability
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `send_workout_reminder` | Pre-workout nudge | Low | MVP | WhatsApp |
+| `send_motivation` | Personalized encouragement | None | MVP | WhatsApp |
+| `check_in_daily` | Quick daily touchpoint | Low | Post-MVP | WhatsApp |
+| `celebrate_consistency` | Streak acknowledgment | None | MVP | WhatsApp |
+| `handle_missed_workout` | Supportive follow-up | None | MVP | WhatsApp |
+| `provide_form_tip` | Exercise technique guidance | None | MVP | WhatsApp |
+| `share_educational_content` | Relevant articles/videos | None | Post-MVP | WhatsApp |
+| `gamify_progress` | Points/badges/challenges | None | Future | None |
+| `create_accountability_challenge` | Group challenges | Low | Future | None |
+| `send_rest_day_reminder` | Recovery encouragement | None | Post-MVP | WhatsApp |
+
+#### Fitness Content Generation
+| Skill | Description | Risk | MVP | Integration |
+|-------|-------------|------|-----|-------------|
+| `write_exercise_description` | Form cues and tips | None | MVP | None |
+| `create_workout_post` | Shareable workout graphic text | None | MVP | Instagram |
+| `write_transformation_story` | Client success narrative | Medium | Post-MVP | Instagram |
+| `generate_nutrition_tip` | Quick nutrition content | None | MVP | Instagram |
+| `create_exercise_carousel` | Multi-slide exercise guide | None | Post-MVP | Instagram, Canva |
+| `write_myth_buster` | Debunk fitness myths | Low | Post-MVP | Instagram |
+| `create_workout_of_day` | Daily WOD content | None | MVP | Instagram |
+| `generate_motivation_quote` | Fitness motivation content | None | MVP | Instagram |
+| `write_behind_scenes` | Day-in-the-life content | None | MVP | Instagram |
+| `create_faq_post` | Answer common questions | None | MVP | Instagram |
+
+**MVP Fitness Skills:** `suggest_exercise_alternative`, `generate_warmup`, `scale_workout`, `create_home_workout`, `calculate_macros`, `suggest_healthy_swap`, `answer_nutrition_faq`, `log_measurements`, `track_weight`, `log_pr`, `celebrate_milestone`, `conduct_initial_assessment`, `assess_fitness_level`, `identify_limitations`, `set_smart_goals`, `send_workout_reminder`, `send_motivation`, `celebrate_consistency`, `handle_missed_workout`, `provide_form_tip`, `write_exercise_description`, `create_workout_post`, `generate_nutrition_tip`, `create_workout_of_day`, `generate_motivation_quote`, `write_behind_scenes`, `create_faq_post`
+
+**Total Fitness Skills:** 27 MVP, 33 Post-MVP, 2 Future = **62 fitness-specific skills**
 
 ---
 
@@ -1910,7 +2011,7 @@ const canva = {
 
 ### MVP Skill Summary
 
-**Total Skills: ~110**
+**Total Skills: ~172** (including 62 fitness-specific skills)
 
 | Category | MVP Skills | Post-MVP | Future |
 |----------|-----------|----------|--------|
@@ -1927,7 +2028,13 @@ const canva = {
 | Communication | 4 | 8 | 1 |
 | Analytics | 2 | 6 | 2 |
 | Learning | 0 | 4 | 2 |
-| **Total** | **36** | **77** | **19** |
+| **Fitness - Programming** | 4 | 6 | 0 |
+| **Fitness - Nutrition** | 4 | 6 | 0 |
+| **Fitness - Progress** | 5 | 5 | 0 |
+| **Fitness - Assessments** | 4 | 5 | 0 |
+| **Fitness - Motivation** | 5 | 3 | 2 |
+| **Fitness - Content** | 5 | 5 | 0 |
+| **Total** | **63** | **107** | **21** |
 
 **MVP Integrations Required:**
 - Instagram Graph API (Business/Creator accounts)

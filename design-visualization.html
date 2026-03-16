@@ -958,24 +958,24 @@
             <div class="card">
                 <h2>Agent Skills Architecture</h2>
                 <p style="color: var(--text-muted); margin-bottom: 1rem;">
-                    ~110 skills organized by category. Skills are composable and chain together for complex tasks.
+                    ~172 skills organized by category, including <strong>62 fitness-specific skills</strong>. Skills are composable and chain together for complex tasks.
                 </p>
                 <div class="stats-grid">
                     <div class="stat">
-                        <div class="stat-value">36</div>
+                        <div class="stat-value">63</div>
                         <div class="stat-label">MVP Skills</div>
                     </div>
                     <div class="stat">
-                        <div class="stat-value">77</div>
+                        <div class="stat-value">107</div>
                         <div class="stat-label">Post-MVP</div>
                     </div>
                     <div class="stat">
-                        <div class="stat-value">19</div>
+                        <div class="stat-value">21</div>
                         <div class="stat-label">Future</div>
                     </div>
-                    <div class="stat">
-                        <div class="stat-value">5</div>
-                        <div class="stat-label">Integrations</div>
+                    <div class="stat" style="background: rgba(16, 185, 129, 0.1); border-color: var(--secondary);">
+                        <div class="stat-value" style="color: var(--secondary);">62</div>
+                        <div class="stat-label">Fitness Skills</div>
                     </div>
                 </div>
             </div>
@@ -1027,6 +1027,56 @@
                         <div class="arch-item">create_event</div>
                         <div class="arch-item">find_conflicts</div>
                         <div class="arch-item">reschedule_session</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Fitness Coaching Skills (Domain-Specific)</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    62 fitness-specific skills that differentiate Juno for personal trainers and fitness coaches.
+                </p>
+                <div class="architecture">
+                    <div class="arch-layer" style="border-color: var(--secondary);">
+                        <h4 style="color: var(--secondary);">Workout Programming</h4>
+                        <div class="arch-item">generate_workout</div>
+                        <div class="arch-item">suggest_exercise_alternative</div>
+                        <div class="arch-item">create_home_workout</div>
+                        <div class="arch-item">scale_workout</div>
+                    </div>
+                    <div class="arch-layer" style="border-color: var(--secondary);">
+                        <h4 style="color: var(--secondary);">Nutrition Planning</h4>
+                        <div class="arch-item">calculate_macros</div>
+                        <div class="arch-item">generate_meal_plan</div>
+                        <div class="arch-item">suggest_healthy_swap</div>
+                        <div class="arch-item">answer_nutrition_faq</div>
+                    </div>
+                    <div class="arch-layer" style="border-color: var(--secondary);">
+                        <h4 style="color: var(--secondary);">Progress Tracking</h4>
+                        <div class="arch-item">log_measurements</div>
+                        <div class="arch-item">track_weight</div>
+                        <div class="arch-item">log_pr</div>
+                        <div class="arch-item">celebrate_milestone</div>
+                    </div>
+                </div>
+                <div class="architecture" style="margin-top: 1rem;">
+                    <div class="arch-layer" style="border-color: var(--secondary);">
+                        <h4 style="color: var(--secondary);">Assessments</h4>
+                        <div class="arch-item">conduct_initial_assessment</div>
+                        <div class="arch-item">assess_fitness_level</div>
+                        <div class="arch-item">set_smart_goals</div>
+                    </div>
+                    <div class="arch-layer" style="border-color: var(--secondary);">
+                        <h4 style="color: var(--secondary);">Motivation</h4>
+                        <div class="arch-item">send_workout_reminder</div>
+                        <div class="arch-item">handle_missed_workout</div>
+                        <div class="arch-item">provide_form_tip</div>
+                    </div>
+                    <div class="arch-layer" style="border-color: var(--secondary);">
+                        <h4 style="color: var(--secondary);">Fitness Content</h4>
+                        <div class="arch-item">create_workout_post</div>
+                        <div class="arch-item">generate_nutrition_tip</div>
+                        <div class="arch-item">create_workout_of_day</div>
                     </div>
                 </div>
             </div>
