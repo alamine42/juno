@@ -227,6 +227,37 @@ When WhatsApp is unavailable and coach is using web chat only, reduce autonomy t
 
 **Re-enable full autonomy:** When coach connects WhatsApp OR installs PWA with verified push notifications.
 
+**Enforcement Mechanism (`can_auto_post` flag):**
+```sql
+-- Coach table includes capability flags
+Coach.can_auto_post BOOLEAN DEFAULT false
+Coach.auto_post_enabled_reason VARCHAR -- 'whatsapp_connected', 'pwa_push_verified'
+```
+
+**Flag checked at multiple points:**
+1. **Approval time:** When coach approves content for scheduling
+   - If `can_auto_post = false`: Create reminder instead of timer, show "Manual posting required"
+   - If `can_auto_post = true`: Create Inngest timer normally
+
+2. **Posting job (all paths - Inngest, Vercel cron, Railway):**
+   ```
+   PostContent job:
+     1. Fetch coach.can_auto_post
+     2. If false: Skip posting, create reminder, notify coach "Please post manually"
+     3. If true: Proceed with Instagram API post
+   ```
+
+3. **Sweep job:** Skip timer creation for coaches with `can_auto_post = false`
+
+**Flag transitions:**
+| Event | Action |
+|-------|--------|
+| WhatsApp connected + verified | Set `can_auto_post = true` |
+| WhatsApp disconnected/revoked | Set `can_auto_post = false` |
+| PWA push permission granted + test successful | Set `can_auto_post = true` |
+| PWA push permission revoked | Set `can_auto_post = false` |
+| Coach manually disables | Set `can_auto_post = false` |
+
 **Technical Implementation:**
 - **Supabase Realtime** for real-time messaging (Vercel serverless can't hold WebSockets)
 - Postgres LISTEN/NOTIFY via Supabase subscription
@@ -318,7 +349,38 @@ Message received → Check (conversation_id, client_id, client_seq)
 **Notification Fallbacks:**
 - If browser push denied: Offer email notification opt-in for urgent messages
 - Email fallback: "Juno needs your attention" with deep link to web chat
-- SMS fallback (future): Phone number already captured for WhatsApp linking
+
+**SMS Fallback (TCPA Compliance Required):**
+SMS is used for critical alerts when web chat only. TCPA compliance is mandatory:
+
+**Consent Capture (during onboarding if web chat only):**
+```
+Screen: "Enable SMS for critical alerts?"
+- "Juno may send you SMS messages for urgent notifications like
+   token expiry or posting failures. Standard rates apply."
+- [x] I consent to receive SMS from Juno
+- Phone number: [________]
+- [Enable SMS] [Skip - email only]
+```
+
+**Data Model:**
+```sql
+Coach.sms_consent BOOLEAN DEFAULT false
+Coach.sms_consent_at TIMESTAMP -- when consent granted
+Coach.sms_phone VARCHAR -- verified phone number
+Coach.sms_opt_out_at TIMESTAMP -- if they later opt out
+```
+
+**Per-Message Requirements:**
+- Every SMS includes: "Reply STOP to unsubscribe"
+- STOP replies processed immediately → set `sms_opt_out_at`, `sms_consent = false`
+- Log all SMS sends in `sms_audit` table (phone hash, timestamp, message type)
+
+**Do NOT enable SMS fallback until:**
+- [ ] Consent capture UI implemented
+- [ ] STOP handling implemented
+- [ ] Audit logging implemented
+- [ ] Phone verification (send code, confirm) implemented
 
 **Authentication Flow (Web Chat):**
 - **Session-based auth via Supabase Auth:**
@@ -845,6 +907,38 @@ COMMIT;
   4. Log all fallback executions for audit trail
 
 - **Critical:** Layer 2 shares NO dependencies with Vercel/Inngest - different cloud, different execution path
+
+**Per-Post Timer Reconciliation (catches individual failures):**
+The above layers only trigger on global health flags. Individual timer failures (approval handler throws before `inngest.send`, payload validation error, dropped event) go undetected. Add reconciliation:
+
+```
+timer-reconciliation job (runs every 15 min, regardless of health):
+  1. Query: SELECT * FROM scheduled_posts
+     WHERE timer_status = 'pending'
+       AND desired_execution_at BETWEEN now() AND now() + interval '2 hours'
+       AND inngest_event_id IS NULL  -- No timer was ever created
+       AND created_at < now() - interval '5 minutes'  -- Grace period for normal flow
+
+  2. For each orphaned post:
+     - Log alert: "Post {id} has no timer, creating now"
+     - Create Inngest timer
+     - Update inngest_event_id
+
+  3. Query: SELECT * FROM scheduled_posts
+     WHERE timer_status = 'dispatched'
+       AND desired_execution_at < now() - interval '10 minutes'  -- Should have fired by now
+
+  4. For each stuck post:
+     - Log alert: "Post {id} timer may have failed"
+     - If can_auto_post: Execute directly, mark executed
+     - If not can_auto_post: Create reminder, notify coach
+```
+
+This catches:
+- Approval handler crashes before `inngest.send`
+- Inngest rejects event (payload too large, validation error)
+- Timer "lost" due to Inngest internal issue
+- Race conditions between approval and sweep
 
 **Recovery with catch-up logic (when Inngest returns):**
   1. On Inngest healthy, query `scheduled_posts` where `timer_status != executed` AND `desired_execution_at` has passed or is within 2hr
@@ -1617,24 +1711,54 @@ When a coach requests account deletion:
 | **Phase 2: Anonymize** | Uploaded files | Delete from Supabase Storage | Within 24h |
 | | Embeddings | Delete from pgvector | Within 24h |
 | | PII fields | Null out name, email, phone | Within 24h |
-| **Phase 3: Hard Delete** | All coach data | `DELETE FROM coaches WHERE deleted_at < now() - interval '30 days'` | 30 days |
-| **Retained** | Stripe records | Kept by Stripe for legal | Per Stripe policy |
-| | Audit logs | Anonymized, kept for compliance | 7 years |
+| **Phase 3: Hard Delete** | Content, Conversations, ScheduledPosts | Delete via FK cascade | 30 days |
+| **EXCLUDED from cascade** | UsageEvents, BillingDispute, ActivityLog | Anonymize `coach_id` → surrogate UUID, retain records | Never deleted |
+| **Retained externally** | Stripe records | Kept by Stripe for legal | Per Stripe policy |
 | **No action** | Reference chunks | System-wide, no coach data | N/A |
+
+**⚠️ Billing/Audit Tables Excluded from Deletion:**
+Financial and audit records must be retained for legal/tax compliance (7+ years):
+```sql
+-- These tables use ON DELETE SET NULL, not CASCADE
+UsageEvents.coach_id → SET NULL (retain for billing reconciliation)
+BillingDispute.coach_id → SET NULL (retain for dispute resolution)
+ActivityLog.coach_id → SET NULL (retain for audit trail)
+ConsentAudit.coach_id → SET NULL (retain for compliance)
+
+-- Add surrogate UUID for internal reporting after deletion
+ALTER TABLE usage_events ADD COLUMN deleted_coach_uuid UUID;
+-- On coach deletion: UPDATE usage_events SET deleted_coach_uuid = coach.id, coach_id = NULL
+```
 
 **Deletion Workflow:**
 1. Coach clicks "Delete Account" in portal
-2. Confirm with password + "I understand this is permanent"
-3. **Immediate:** Set `deleted_at` timestamp, revoke tokens, log out
-4. **Immediate:** Block all API access (RLS checks `deleted_at IS NULL`)
-5. **Within 24h (background job):**
+2. **Offer data export first** (see Data Export Pipeline below)
+3. Confirm with password + "I understand this is permanent"
+4. **Immediate:** Set `deleted_at` timestamp, revoke tokens, log out
+5. **Immediate:** Block all API access (RLS checks `deleted_at IS NULL`)
+6. **Within 24h (background job):**
    - Delete Supabase Storage files
    - Delete embeddings
    - Null out PII fields (name, email, phone → NULL)
+   - Anonymize billing/audit records (set `deleted_coach_uuid`, null `coach_id`)
    - Send confirmation email: "Your account has been deactivated"
-6. **30 days later (scheduled job):**
-   - Hard delete coach record and all dependent data via FK cascade
+7. **30 days later (scheduled job):**
+   - Hard delete coach record and cascadable data (Content, Conversations, etc.)
+   - Billing/audit records remain with anonymized surrogate UUID
    - Send final confirmation: "Your data has been permanently deleted"
+
+**Data Export Pipeline (GDPR Right to Portability):**
+Before deletion, coach can request full data export:
+1. Coach clicks "Export My Data" in portal settings
+2. Background job assembles export package:
+   - `profile.json`: Coach profile, preferences, brand voice
+   - `content.json`: All Content records with revisions
+   - `conversations.json`: All conversation messages
+   - `media/`: Uploaded files from Supabase Storage
+   - `usage.json`: UsageEvents summary (anonymized)
+3. Package stored in Supabase Storage (signed URL, 7-day expiry)
+4. Email sent: "Your data export is ready. Download within 7 days."
+5. Export logged in ActivityLog for compliance
 
 **Why 30-day retention:**
 - Allows account recovery if deletion was accidental
@@ -1645,7 +1769,7 @@ When a coach requests account deletion:
 **Compliance Documentation:**
 - Log all deletion requests with timestamps
 - Store deletion confirmation for audit
-- Provide data export before deletion (GDPR right to portability)
+- Track data export requests and downloads
 
 ### Multi-Tenancy & Data Isolation
 
@@ -1823,98 +1947,78 @@ The 8-week timeline with 63+ skills is not realistic for a solo founder. **Commi
 - Knowledge base uploads
 - Video/audio moderation
 
-### Week 1: Foundation
+### Week 1: Foundation (TRUE MVP)
 - [ ] Next.js project setup with TypeScript
-- [ ] PostgreSQL + Redis setup
+- [ ] PostgreSQL setup (Supabase)
 - [ ] Auth system (magic link)
-- [ ] Basic data models and migrations
-- [ ] **Inngest setup and first test function**
-- [ ] **Apply for WhatsApp Business API approval** (start immediately)
-- [ ] **Apply for Canva Connect API access** (start immediately)
+- [ ] Basic data models: Coach, Content, ChatMessage
+- [ ] Supabase Realtime setup for web chat
 
-### Week 2: Web Portal Core
+### Week 2: Web Chat + Basic UI
 - [ ] Web portal: signup, login, settings
-- [ ] OAuth integration: Instagram (with Business/Creator account check)
-- [ ] OAuth integration: Google Calendar
-- [ ] Token storage and refresh infrastructure
-- [ ] Fallback content ingestion UI (manual paste, screenshot upload)
+- [ ] **Web chat interface (primary channel, not fallback)**
+- [ ] Chat state management (session-based)
+- [ ] Basic coach profile/settings page
+- [ ] Content list view (empty for now)
 
-### Week 3: Background Jobs + Hybrid Search Infrastructure
-- [ ] Inngest functions: PostContent, RefreshToken, SyncCalendar
-- [ ] Content scheduling system
-- [ ] Calendar sync implementation
-- [ ] **pgvector extension enabled in Supabase**
-- [ ] **Embedding generation pipeline (OpenAI text-embedding-3-small)**
-- [ ] **Full-text search setup (tsvector columns, GIN indexes)**
-- [ ] **Hybrid search function (RRF fusion of keyword + semantic)**
-- [ ] **Supabase Realtime setup for web chat**
-- [ ] Job monitoring dashboard (Inngest provides)
-
-### Week 4: Content Generation + Memory + Knowledge Base
+### Week 3: Content Generation (5 Skills Only)
 - [ ] Claude integration for content generation
-- [ ] Voice learning from Instagram posts (or fallback data)
-- [ ] Content preview and approval flow (web portal)
-- [ ] **Tiered moderation (Green/Yellow/Red) + attestation flow**
-- [ ] **Per-coach topic allow-lists**
-- [ ] **Memory tables (using pgvector from Week 3)**
-- [ ] **Voice model creation + anchor embeddings**
-- [ ] **KnowledgeItem table + basic CRUD**
-- [ ] **Auto-context retrieval using hybrid search**
-- [ ] **Note upload via chat (text only)**
-- [ ] **Web portal file manager (basic)**
-- [ ] **Start web chat fallback (using Supabase Realtime from Week 3)**
-- [ ] **Degraded mode for personal IG accounts**
+- [ ] **Skill: generate_caption** - Claude generates Instagram caption from prompt
+- [ ] **Skill: edit_caption** - Refine based on coach feedback
+- [ ] **Skill: save_draft** - Store content for later
+- [ ] **Skill: schedule_reminder** - Set reminder to post manually (email notification)
+- [ ] **Skill: send_chat_message** - Juno responds in chat
+- [ ] Content preview in web portal
+- [ ] Copy-to-clipboard button for manual posting
 
-### Week 5: Chat Integration
-- [ ] WhatsApp Business API integration (if approved)
-- [ ] **Web chat interface (fallback, built regardless)**
-- [ ] Conversation handling and state management (channel-agnostic)
-- [ ] Deep links from chat to web portal
-- [ ] Quick-reply buttons and proactive nudges
+### Week 4: Moderation + Beta Launch
+- [ ] **Basic moderation (Green/Yellow/Red classification)**
+- [ ] Yellow content → coach approval required
+- [ ] Red content → blocked with explanation
+- [ ] Simple email notifications (reminders, alerts)
+- [ ] End-to-end testing of core flow
+- [ ] Security review (auth, RLS)
+- [ ] **FREE BETA LAUNCH with 5-10 coaches**
+- [ ] Basic monitoring (Supabase dashboard, error tracking)
 
-### Week 6: Instagram Posting + Undo + Knowledge Base
-- [ ] Instagram posting via Graph API
-- [ ] Content versioning (ContentRevision)
-- [ ] Moderation re-check before posting
-- [ ] Undo functionality with status states
-- [ ] Posting failure handling and alerts
-- [ ] **Feedback tracking (store edits with embeddings)**
-- [ ] **Lesson extraction from coach edits**
-- [ ] **Image/PDF upload + processing (AI description, text extraction)**
-- [ ] **Client/Program/Testimonial tables**
-- [ ] **Auto-context retrieval in content generation**
-- [ ] **Pinning + access tracking**
+---
 
-### Week 7: Billing + Analytics
+## POST-LAUNCH ITERATION (After Beta Validation)
+
+**Only proceed after 10+ coaches actively using MVP and providing feedback.**
+
+### Phase 2: Automation (Weeks 5-8 equivalent)
+- [ ] Apply for WhatsApp Business API approval
+- [ ] Apply for Canva Connect API access
+- [ ] Inngest setup for background jobs
+- [ ] Instagram Graph API integration (auto-posting)
+- [ ] OAuth integration: Instagram Business/Creator accounts
+- [ ] WhatsApp Business API integration (when approved)
+- [ ] DST-aware scheduling with sweep jobs
+
+### Phase 3: Intelligence (Weeks 9-12 equivalent)
+- [ ] pgvector + embedding pipeline
+- [ ] Voice learning from coach's existing content
+- [ ] Memory system (lessons, preferences)
+- [ ] Knowledge base (documents, media assets)
+- [ ] Hybrid search (BM25 + vector + RRF)
+
+### Phase 4: Monetization (Weeks 13-16 equivalent)
 - [ ] Stripe subscription integration
-- [ ] Usage metering pipeline with compensating events
-- [ ] UsageEvent schema with undo tracking fields
-- [ ] Reconciliation job and tests
-- [ ] Basic analytics dashboard
-- [ ] Activity log with undo buttons and status indicators
+- [ ] Usage metering with compensating events
+- [ ] Analytics dashboard
+- [ ] Advanced moderation (video/audio, caching)
+- [ ] Google Calendar sync
 
-### Week 8: Hardening + Beta Launch
-- [ ] End-to-end testing
-- [ ] Error handling audit
-- [ ] Security review
-- [ ] Rate limiting
-- [ ] **Memory consolidation jobs (daily/weekly)**
-- [ ] **Drift detection baseline setup**
-- [ ] **Voice anchor comparison before posting**
-- [ ] Beta launch with 5-10 coaches
-- [ ] Monitoring and alerting setup
-
-### Parallel Workstreams
+### Parallel Workstreams (POST-LAUNCH)
 ```
-Week 1 ─────────────────────────────────────────────▶ Week 8
+Beta Launch ─────────────────────────────────────────▶ Phase 4
   │
-  ├── WhatsApp API Approval (background, check weekly)
+  ├── WhatsApp API Approval (start after beta validation)
   │
-  ├── Canva API Approval (background, check weekly)
+  ├── Canva API Approval (start after beta validation)
   │
-  ├── Web Chat Fallback (Weeks 4-5, built regardless of WhatsApp status)
-  │
-  └── Beta Coach Recruitment (start Week 4)
+  └── Expanded Coach Recruitment (ongoing)
 ```
 
 ---

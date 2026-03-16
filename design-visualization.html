@@ -2508,80 +2508,72 @@
             </div>
 
             <div class="card">
-                <h2>8-Week MVP Timeline</h2>
+                <h2>4-Week TRUE MVP → Launch</h2>
+                <div style="background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                    <strong>⚠️ SCOPE LOCKED:</strong> Web chat only, 5 hardcoded skills, manual copy/paste, FREE beta. No automation until beta validation.
+                </div>
                 <div class="timeline">
                     <div class="timeline-item">
                         <div class="timeline-week">Week 1: Foundation</div>
                         <ul class="timeline-tasks">
-                            <li>Next.js project setup with TypeScript</li>
-                            <li>PostgreSQL + Redis setup</li>
+                            <li>Next.js + TypeScript + Supabase</li>
                             <li>Auth system (magic link)</li>
-                            <li>Apply for WhatsApp Business API</li>
-                            <li>Apply for Canva Connect API</li>
-                        </ul>
-                    </div>
-                    <div class="timeline-item">
-                        <div class="timeline-week">Week 2: Web Portal Core</div>
-                        <ul class="timeline-tasks">
-                            <li>Web portal: signup, login, settings</li>
-                            <li>OAuth integration: Instagram</li>
-                            <li>OAuth integration: Google Calendar</li>
-                            <li>Token storage and refresh infrastructure</li>
-                        </ul>
-                    </div>
-                    <div class="timeline-item">
-                        <div class="timeline-week">Week 3: Jobs + Hybrid Search</div>
-                        <ul class="timeline-tasks">
-                            <li>Inngest functions: post-content, refresh-token, sync-calendar</li>
-                            <li>pgvector extension + embedding pipeline</li>
-                            <li>Full-text search (tsvector, GIN indexes)</li>
-                            <li>Hybrid search function (RRF fusion)</li>
+                            <li>Basic data models: Coach, Content, ChatMessage</li>
                             <li>Supabase Realtime for web chat</li>
                         </ul>
                     </div>
                     <div class="timeline-item">
-                        <div class="timeline-week">Week 4: Content Generation + Memory</div>
+                        <div class="timeline-week">Week 2: Web Chat + Basic UI</div>
                         <ul class="timeline-tasks">
-                            <li>Claude integration + voice learning</li>
-                            <li>Tiered moderation (Green/Yellow/Red)</li>
-                            <li>Voice model + anchor embeddings</li>
-                            <li>Degraded mode for personal IG accounts</li>
+                            <li>Web portal: signup, login, settings</li>
+                            <li><strong>Web chat interface (primary channel)</strong></li>
+                            <li>Chat state management</li>
+                            <li>Content list view</li>
                         </ul>
                     </div>
                     <div class="timeline-item">
-                        <div class="timeline-week">Week 5: WhatsApp Integration</div>
+                        <div class="timeline-week">Week 3: Content Generation</div>
                         <ul class="timeline-tasks">
-                            <li>WhatsApp Business API (or web chat fallback)</li>
-                            <li>Conversation handling and state management</li>
-                            <li>Deep links to web portal</li>
-                            <li>Quick-reply buttons and nudges</li>
+                            <li>Claude integration</li>
+                            <li><strong>5 hardcoded skills only</strong></li>
+                            <li>Content preview in web portal</li>
+                            <li>Copy-to-clipboard for manual posting</li>
+                        </ul>
+                    </div>
+                    <div class="timeline-item" style="background: #dcfce7; border-left: 4px solid #22c55e;">
+                        <div class="timeline-week">Week 4: 🚀 FREE BETA LAUNCH</div>
+                        <ul class="timeline-tasks">
+                            <li>Basic moderation (Green/Yellow/Red)</li>
+                            <li>Email notifications (reminders)</li>
+                            <li>Security review + testing</li>
+                            <li><strong>Launch with 5-10 coaches</strong></li>
+                        </ul>
+                    </div>
+                </div>
+                <h3 style="margin-top: 24px; color: #6b7280;">POST-LAUNCH PHASES (After Beta Validation)</h3>
+                <div class="timeline" style="opacity: 0.7;">
+                    <div class="timeline-item">
+                        <div class="timeline-week">Phase 2: Automation</div>
+                        <ul class="timeline-tasks">
+                            <li>Instagram Graph API (auto-posting)</li>
+                            <li>WhatsApp Business API</li>
+                            <li>DST-aware scheduling</li>
                         </ul>
                     </div>
                     <div class="timeline-item">
-                        <div class="timeline-week">Week 6: Instagram + Undo</div>
+                        <div class="timeline-week">Phase 3: Intelligence</div>
                         <ul class="timeline-tasks">
-                            <li>Instagram posting via Graph API</li>
-                            <li>Content versioning (ContentRevision)</li>
-                            <li>Undo functionality</li>
-                            <li>Posting failure handling</li>
+                            <li>Voice learning + Memory system</li>
+                            <li>Knowledge base + RAG</li>
+                            <li>Hybrid search</li>
                         </ul>
                     </div>
                     <div class="timeline-item">
-                        <div class="timeline-week">Week 7: Billing + Analytics</div>
+                        <div class="timeline-week">Phase 4: Monetization</div>
                         <ul class="timeline-tasks">
-                            <li>Stripe subscription integration</li>
-                            <li>Usage metering pipeline</li>
-                            <li>Basic analytics dashboard</li>
-                            <li>Activity log with undo buttons</li>
-                        </ul>
-                    </div>
-                    <div class="timeline-item">
-                        <div class="timeline-week">Week 8: Launch</div>
-                        <ul class="timeline-tasks">
-                            <li>End-to-end testing</li>
-                            <li>Error handling audit</li>
-                            <li>Security review</li>
-                            <li>Beta launch with 5-10 coaches</li>
+                            <li>Stripe integration</li>
+                            <li>Analytics dashboard</li>
+                            <li>Advanced moderation</li>
                         </ul>
                     </div>
                 </div>
