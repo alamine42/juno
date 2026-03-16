@@ -1626,6 +1626,12 @@
                         Store <code>scheduled_timezone</code> at approval time. If coach travels or updates their profile timezone, already-scheduled posts are unaffected.
                     </span>
                 </div>
+                <div style="margin-top: 0.75rem; padding: 0.75rem; background: rgba(245, 158, 11, 0.1); border: 1px solid var(--warning); border-radius: 0.5rem;">
+                    <strong style="color: var(--warning);">DST Monitor Job (daily):</strong>
+                    <span style="font-size: 0.85rem; color: var(--text-muted);">
+                        Checks IANA DB for upcoming DST transitions. Recomputes <code>desired_execution_at</code> for affected posts. Notifies coaches: "3 posts shifted by 1 hour due to DST."
+                    </span>
+                </div>
             </div>
 
             <div class="card">
@@ -1633,9 +1639,15 @@
                 <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
                     <strong>Scheduling intent persisted at approval time</strong> (not just within 2hr window). Recovery queries the full intent table.
                 </p>
+                <div style="margin-bottom: 1rem; padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); border-radius: 0.5rem;">
+                    <strong style="color: var(--danger);">⚠️ SINGLE SOURCE OF TRUTH: scheduled_posts table</strong>
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">
+                        Content table only stores <code>status</code>. All scheduling fields live in scheduled_posts. No divergence possible.
+                    </div>
+                </div>
                 <div style="margin-bottom: 1rem; padding: 0.75rem; background: rgba(99, 102, 241, 0.1); border: 1px solid var(--primary); border-radius: 0.5rem;">
-                    <strong style="color: var(--primary);">scheduled_posts table:</strong>
-                    <code style="font-size: 0.8rem; color: var(--text-muted);">{ content_id, desired_execution_at, timer_status: pending|dispatched|executed }</code>
+                    <strong style="color: var(--primary);">scheduled_posts schema:</strong>
+                    <code style="font-size: 0.8rem; color: var(--text-muted);">{ content_id (UNIQUE), scheduled_local_time, scheduled_date, scheduled_timezone, desired_execution_at, timer_status }</code>
                 </div>
 
                 <div style="margin-bottom: 1rem; padding: 0.75rem; background: rgba(16, 185, 129, 0.1); border: 1px solid var(--secondary); border-radius: 0.5rem;">
@@ -2457,36 +2469,41 @@
 
         <!-- Timeline Tab -->
         <div id="timeline" class="tab-content">
-            <div class="card" style="border: 2px solid var(--warning);">
-                <h2 style="color: var(--warning);">⚠️ TRUE MINIMUM MVP (If Timeline Pressured)</h2>
+            <div class="card" style="border: 2px solid var(--danger);">
+                <h2 style="color: var(--danger);">🚨 COMMIT TO THIS SCOPE (Solo Founder Reality)</h2>
                 <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
-                    Weeks 1-4 only. A coach can get value from "generate caption → approve → copy/paste to Instagram" without automation.
+                    63+ skills in 8 weeks is not realistic. Ship this in 4 weeks, iterate. Value = "generate caption → approve → copy/paste to Instagram"
                 </p>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                     <div>
-                        <h4 style="color: var(--secondary); margin-bottom: 0.5rem;">✓ Include (MVP)</h4>
+                        <h4 style="color: var(--secondary); margin-bottom: 0.5rem;">✓ SHIP THIS (4 weeks)</h4>
                         <ul style="color: var(--text-muted); font-size: 0.8rem; padding-left: 1.25rem;">
-                            <li>Web chat only (no WhatsApp)</li>
+                            <li>Web chat only</li>
                             <li>Claude generates captions</li>
-                            <li>Manual copy/paste to Instagram</li>
-                            <li>Basic Green/Yellow/Red moderation</li>
-                            <li>Simple date/time picker</li>
-                            <li>Quick notes only</li>
-                            <li>Free tier only</li>
+                            <li><strong>Manual copy/paste posting</strong></li>
+                            <li>Basic moderation (Green/Yellow/Red)</li>
+                            <li><strong>5 hardcoded skills only</strong></li>
+                            <li>Free beta (no Stripe)</li>
                         </ul>
                     </div>
                     <div>
-                        <h4 style="color: var(--primary); margin-bottom: 0.5rem;">→ Defer (Weeks 5-8)</h4>
+                        <h4 style="color: var(--primary); margin-bottom: 0.5rem;">→ POST-LAUNCH (iterate)</h4>
                         <ul style="color: var(--text-muted); font-size: 0.8rem; padding-left: 1.25rem;">
                             <li>WhatsApp integration</li>
-                            <li>Auto-posting to Instagram API</li>
-                            <li>Voice learning, memory system</li>
+                            <li>Auto-posting via Instagram API</li>
+                            <li>Voice learning, memory, RAG</li>
+                            <li>58+ fitness coaching skills</li>
                             <li>Calendar sync</li>
-                            <li>Analytics dashboard</li>
                             <li>Stripe billing</li>
-                            <li>File uploads, RAG</li>
+                            <li>Analytics dashboard</li>
                         </ul>
                     </div>
+                </div>
+                <div style="margin-top: 1rem; padding: 0.75rem; background: var(--bg); border-radius: 0.5rem;">
+                    <strong>The 5 MVP Skills:</strong>
+                    <span style="font-size: 0.8rem; color: var(--text-muted);">
+                        generate_caption, edit_caption, save_draft, schedule_reminder, send_chat_message
+                    </span>
                 </div>
             </div>
 

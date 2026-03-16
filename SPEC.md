@@ -79,15 +79,35 @@ Create space and time for coaches to do what they do best—coach—by automatin
 - Ensures posts scheduled minutes ahead are never missed
 - **Timer window matches Path A:** Both paths use 2-hour window (no blind spots)
 
-**Content posts stored with dual timestamps:**
-  1. Coach approves post for "Tuesday 9am" → Store:
+**⚠️ SINGLE SOURCE OF TRUTH: `scheduled_posts` table (NOT Content table)**
+
+All scheduling data lives in `scheduled_posts`. The `Content` table only stores `status` (draft/scheduled/posted/failed) and references `scheduled_posts` via `content_id`. This prevents divergence.
+
+**Scheduling Flow:**
+  1. Coach approves post for "Tuesday 9am" → Write to `scheduled_posts`:
      - `scheduled_local_time` + `scheduled_date` + `scheduled_timezone` (for UX display)
      - `desired_execution_at` (UTC, computed, indexed - for sweep queries)
-  2. **Immediately** fire Inngest timer (Path A) if within 2 hours
-  3. Sweep validates and corrects if needed (Path B)
-  4. **Clarification on 2-hour limit:** Coaches CAN schedule posts for any future date (weekly calendar). The 2-hour limit applies only to *materializing Inngest timers*—we don't create timers for posts >2 hours away. The sweep continuously materializes timers as posts enter the 2-hour window.
-  5. **Timezone snapshot:** `scheduled_timezone` is captured at approval time and never changes. If coach travels or updates their profile timezone, already-scheduled posts are unaffected.
-  6. **DST handling:** On DST change, `desired_execution_at` is recomputed from local time + timezone. Sweep detects mismatch and updates timer.
+     - `timer_status` (pending/dispatched/executed/failed)
+  2. Update `Content.status = 'scheduled'` (no scheduling fields on Content)
+  3. **Immediately** fire Inngest timer (Path A) if within 2 hours
+  4. Sweep validates and corrects if needed (Path B)
+  5. **Clarification on 2-hour limit:** Coaches CAN schedule posts for any future date (weekly calendar). The 2-hour limit applies only to *materializing Inngest timers*—we don't create timers for posts >2 hours away. The sweep continuously materializes timers as posts enter the 2-hour window.
+  6. **Timezone snapshot:** `scheduled_timezone` is captured at approval time and never changes. If coach travels or updates their profile timezone, already-scheduled posts are unaffected.
+
+**DST Monitor Job (explicit mechanism):**
+DST transitions can shift post times by ±1 hour. The 2-hour sweep window is too late for user notification.
+
+```
+dst-monitor job (runs daily at 00:00 UTC):
+  1. Check IANA timezone database for upcoming DST transitions (next 7 days)
+  2. For each affected timezone:
+     - Query: SELECT * FROM scheduled_posts WHERE scheduled_timezone = $tz AND desired_execution_at > now()
+     - Recompute desired_execution_at from local time + new offset
+     - If changed: Update row, cancel old Inngest timer, create new timer
+  3. Send summary to affected coaches: "3 posts shifted by 1 hour due to DST"
+  4. Log all changes for audit
+```
+
 - For per-coach events (reminders, silence checks): Same pattern - store local + UTC, materialize timers just-in-time
 
 **Calendar Sync Conflict Resolution:**
@@ -187,6 +207,25 @@ If WhatsApp Business API approval is delayed, the web portal includes a native c
 | Offline access | Full (queued messages) | Limited (localStorage queue) |
 | Response time | Instant | ~500ms latency |
 | Phone lock screen | Notifications appear | Requires browser open |
+
+**⚠️ AUTONOMY DOWNGRADE (Web Chat Only Mode):**
+When WhatsApp is unavailable and coach is using web chat only, reduce autonomy to prevent missed critical alerts:
+
+| Feature | With WhatsApp | Web Chat Only |
+|---------|---------------|---------------|
+| Auto-posting | Enabled (Green tier) | **Disabled** - require explicit portal approval |
+| Proactive nudges | Sent immediately | **Paused** - batch into daily email digest |
+| Critical alerts (token expiry, moderation) | WhatsApp + email | **SMS + email** (must collect phone) |
+| Time-sensitive approvals | WhatsApp quick reply | **Email with 1-click approve link** |
+| Silence handling | 72h threshold | **Disabled** - no auto-pause |
+
+**Why downgrade autonomy:**
+- Web chat cannot guarantee delivery to locked phone
+- Missing a moderation warning could auto-post unreviewed content
+- Missing token expiry alert could cause silent posting failures
+- Better to require explicit action than risk silent failures
+
+**Re-enable full autonomy:** When coach connects WhatsApp OR installs PWA with verified push notifications.
 
 **Technical Implementation:**
 - **Supabase Realtime** for real-time messaging (Vercel serverless can't hold WebSockets)
@@ -781,13 +820,15 @@ COMMIT;
 - Only activates when Inngest health check fails (checked via environment flag)
 - Uses `SELECT ... FOR UPDATE SKIP LOCKED` to prevent race conditions with Inngest
 
-**Layer 2: External Worker (different-infra fallback - MVP optional, Post-MVP required):**
-- **Railway/Cloud Run cron job** running outside Vercel entirely
+**Layer 2: External Worker (different-infra fallback - MVP REQUIRED):**
+- **Railway cron job** running outside Vercel entirely
 - Same logic as Layer 1, but on independent infrastructure
 - Queries Supabase directly (Supabase is already external to Vercel)
-- Activates when BOTH Inngest AND Vercel appear unhealthy (checked via uptime monitor)
+- Runs continuously (every 5 min), checks both Inngest AND Vercel health
+- If either unhealthy: Execute due posts directly
 - **Cost:** ~$5/month on Railway for minimal always-on worker
-- **Why needed:** Vercel outage would take down both Inngest integration AND Layer 1 cron
+- **Why MVP required:** Cannot claim "autonomous posting" without redundancy. Vercel outage would otherwise take down both Inngest integration AND Layer 1 cron.
+- **Setup:** Week 3 task - deploy simple Node.js cron to Railway with Supabase connection
 
 **Layer 3: Manual Disaster Recovery SOP:**
 - If all automated paths fail (Inngest + Vercel + Railway):
@@ -1149,16 +1190,25 @@ Content
 ├── type (post, reel, story, carousel)
 ├── current_revision_id (FK to ContentRevision)
 ├── status (draft, scheduled, posted, failed, deleted)
-├── scheduled_local_time (TIME - e.g., "09:00", for DST-safe scheduling)
-├── scheduled_date (DATE - e.g., "2026-03-17")
-├── scheduled_timezone (TEXT - e.g., "America/New_York", IANA timezone)
-├── desired_execution_at (TIMESTAMP WITH TIME ZONE - UTC, indexed, computed from local + tz)
-├── scheduled_at (TIMESTAMP - legacy/computed UTC, updated by scheduler-sweep)
 ├── posted_at
 ├── platform (instagram)
 ├── external_id (Instagram post ID, nullable)
 ├── performance_metrics (JSON)
 └── created_at, updated_at
+-- NOTE: Scheduling fields are in scheduled_posts table (single source of truth)
+-- Content.status = 'scheduled' indicates a scheduled_posts row exists
+
+ScheduledPost (CANONICAL scheduling source)
+├── id
+├── content_id (FK to Content, UNIQUE - one schedule per content)
+├── scheduled_local_time (TIME - e.g., "09:00")
+├── scheduled_date (DATE - e.g., "2026-03-17")
+├── scheduled_timezone (TEXT - IANA, e.g., "America/New_York")
+├── desired_execution_at (TIMESTAMP WITH TIME ZONE - UTC, indexed)
+├── timer_status (pending, dispatched, executed, failed)
+├── inngest_event_id (nullable - tracks active timer)
+├── created_at, updated_at
+└── CONSTRAINT: All scheduling queries use this table, not Content
 
 ContentRevision
 ├── id, content_id
@@ -1554,30 +1604,43 @@ When coach schedules post >24h out:
 - No training on coach data without consent
 
 **GDPR/Data Deletion Cascade (Coach Account Deletion):**
+
+**Lifecycle: Soft-Delete → 30-Day Retention → Hard Delete**
+
 When a coach requests account deletion:
 
-| Data Type | Location | Deletion Method | Timeline |
-|-----------|----------|-----------------|----------|
-| Database records | Supabase (RLS tables) | `DELETE FROM coaches WHERE id = $1` (cascades via FK) | Immediate |
-| Uploaded files | Supabase Storage | Background job: iterate bucket by coach prefix, delete all | 24 hours |
-| Embeddings | pgvector tables | `DELETE FROM memory_entries WHERE coach_id = $1` | Immediate |
-| Redis cache | Redis | Pattern delete: `coach:{id}:*` | Immediate |
-| Reference chunks | ReferenceChunk table | Shared (system-wide), no coach data | N/A |
-| Conversation logs | conversation_messages | Cascade delete via FK | Immediate |
-| Stripe data | Stripe API | Cancel subscription, retain for legal (Stripe handles) | Per Stripe policy |
+| Phase | Data Type | Action | Timeline |
+|-------|-----------|--------|----------|
+| **Phase 1: Soft Delete** | Coach record | Set `deleted_at`, block login | Immediate |
+| | Sessions/tokens | Revoke all | Immediate |
+| | Redis cache | Pattern delete `coach:{id}:*` | Immediate |
+| **Phase 2: Anonymize** | Uploaded files | Delete from Supabase Storage | Within 24h |
+| | Embeddings | Delete from pgvector | Within 24h |
+| | PII fields | Null out name, email, phone | Within 24h |
+| **Phase 3: Hard Delete** | All coach data | `DELETE FROM coaches WHERE deleted_at < now() - interval '30 days'` | 30 days |
+| **Retained** | Stripe records | Kept by Stripe for legal | Per Stripe policy |
+| | Audit logs | Anonymized, kept for compliance | 7 years |
+| **No action** | Reference chunks | System-wide, no coach data | N/A |
 
 **Deletion Workflow:**
 1. Coach clicks "Delete Account" in portal
 2. Confirm with password + "I understand this is permanent"
-3. Immediate: Soft-delete coach record (`deleted_at` timestamp)
-4. Immediate: Revoke all tokens, log out all sessions
-5. Background job (within 24h):
+3. **Immediate:** Set `deleted_at` timestamp, revoke tokens, log out
+4. **Immediate:** Block all API access (RLS checks `deleted_at IS NULL`)
+5. **Within 24h (background job):**
    - Delete Supabase Storage files
-   - Delete embeddings (can be large, batch delete)
-   - Purge Redis caches
-   - Send confirmation email: "Your data has been deleted"
-6. 30-day retention for legal/support (soft delete)
-7. Hard delete after 30 days
+   - Delete embeddings
+   - Null out PII fields (name, email, phone → NULL)
+   - Send confirmation email: "Your account has been deactivated"
+6. **30 days later (scheduled job):**
+   - Hard delete coach record and all dependent data via FK cascade
+   - Send final confirmation: "Your data has been permanently deleted"
+
+**Why 30-day retention:**
+- Allows account recovery if deletion was accidental
+- Enables support investigation if coach disputes charges
+- Required for some audit/compliance scenarios
+- Coach cannot log in during this period (blocked at RLS level)
 
 **Compliance Documentation:**
 - Log all deletion requests with timestamps
@@ -1723,29 +1786,42 @@ Week 8: Hardening
 - Week 5-6: Add automation layer (scheduling, auto-post)
 - Week 7-8: Hardening + billing (defer analytics if needed)
 
-**TRUE MINIMUM MVP (If timeline pressured - Week 1-4 only):**
+**⚠️ TRUE MINIMUM MVP - COMMIT TO THIS SCOPE:**
 
-| Feature | MVP (Weeks 1-4) | Deferred (Weeks 5-8) |
-|---------|-----------------|---------------------|
-| Chat interface | Web chat only | WhatsApp integration |
-| Content generation | Claude generates captions | Voice learning, memory |
-| Posting | Manual copy/paste | Auto-posting via API |
-| Moderation | Basic Green/Yellow/Red | Staged retries, caching |
-| Scheduling | Simple date/time picker | DST-aware, timezone handling |
-| Analytics | None | Basic dashboard |
-| Billing | Free tier only | Stripe integration |
-| Knowledge base | Quick notes only | File uploads, RAG |
+The 8-week timeline with 63+ skills is not realistic for a solo founder. **Commit to the true minimum:**
 
-**Rationale:** A coach can get value from "generate caption → approve → copy/paste to Instagram" without automation. Everything else is convenience, not core value.
+| Feature | TRUE MVP (ship this) | Everything Else (post-launch) |
+|---------|----------------------|-------------------------------|
+| Chat | Web chat only | WhatsApp |
+| Content | Claude generates captions (no voice learning) | Voice model, memory, RAG |
+| Posting | **Manual copy/paste** | Auto-posting via Instagram API |
+| Moderation | Basic Green/Yellow/Red classification | Staged retries, video/audio, caching |
+| Scheduling | "Post at 9am tomorrow" → copy reminder | DST-aware timers, sweep jobs |
+| Skills | **5 hardcoded skills** (see below) | 63+ skill framework |
+| Analytics | None | Dashboard |
+| Billing | Free beta (no Stripe) | Stripe integration |
+| Calendar | None | Google Calendar sync |
 
-**Explicit Deferrals (Post-MVP):**
-- WhatsApp Business API (replace with web chat)
+**The 5 MVP Skills (hardcoded, no framework):**
+1. `generate_caption` - Claude generates Instagram caption from prompt
+2. `edit_caption` - Refine based on coach feedback
+3. `save_draft` - Store content for later
+4. `schedule_reminder` - Set reminder to post manually (email/notification)
+5. `send_chat_message` - Juno responds in chat
+
+**Rationale:** A coach can get value from "generate caption → approve → copy/paste to Instagram" without automation. Everything else is convenience, not core value. Ship this in 4 weeks, iterate.
+
+**Explicit Deferrals (ALL post-launch):**
+- WhatsApp Business API
 - Auto-posting to Instagram API
-- Calendar sync with Google Calendar
-- Advanced memory/learning system
+- Google Calendar sync
+- Voice learning / memory system
 - Canva integration
 - Analytics dashboard
-- Fitness coaching skills (use generic prompts initially)
+- Fitness coaching skills (58+ skills)
+- Stripe billing
+- Knowledge base uploads
+- Video/audio moderation
 
 ### Week 1: Foundation
 - [ ] Next.js project setup with TypeScript
