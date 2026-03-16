@@ -21,20 +21,23 @@ Create space and time for coaches to do what they do best—coach—by automatin
 
 | Decision | Choice |
 |----------|--------|
-| Primary Interface | WhatsApp (chat-first) + Web Portal |
-| Autonomy Level | Fully autonomous with guardrails |
-| MVP Scope | Content creation + scheduling |
+| Primary Interface | **Web chat (MVP)** → WhatsApp (post-MVP) |
+| Autonomy Level | **Manual copy/paste (MVP)** → Autonomous with guardrails (post-MVP) |
+| MVP Scope | **5 skills: generate/edit caption, save draft, reminder, chat** |
 | Go-to-Market | Direct B2C to coaches |
 | Personality | Encouraging business partner |
 | Success Metric | 30-day retention |
-| Timeline | 8 weeks to MVP |
-| **Background Jobs** | **Inngest (managed)** |
+| Timeline | **4 weeks to TRUE MVP** (free beta) |
+| **Background Jobs** | **None (MVP)** → Inngest (post-MVP) |
 
 ---
 
-## MVP Features
+## Feature Vision (Post-MVP Roadmap)
 
-### 1. Content Creation
+> **⚠️ NOTE:** This section describes the FULL PRODUCT VISION, not the TRUE MINIMUM MVP.
+> For the actual MVP scope (4 weeks, 5 skills, manual posting), see **"TRUE MINIMUM MVP"** section below.
+
+### 1. Content Creation (Post-MVP)
 **Goal:** Generate high-quality, on-brand content for Instagram
 
 - **Text content:** Captions, carousel scripts, Reels scripts, Stories copy
@@ -42,7 +45,7 @@ Create space and time for coaches to do what they do best—coach—by automatin
 - **Canva integration:** Generate text, provide Canva templates for visual design
 - **Content types:** Educational posts, client wins, behind-the-scenes, promotional, engagement hooks
 
-**Not in MVP:**
+**Deferred to post-MVP:**
 - AI image generation
 - TikTok/LinkedIn/other platforms
 - Long-form content (blogs, newsletters)
@@ -103,9 +106,63 @@ dst-monitor job (runs daily at 00:00 UTC):
   2. For each affected timezone:
      - Query: SELECT * FROM scheduled_posts WHERE scheduled_timezone = $tz AND desired_execution_at > now()
      - Recompute desired_execution_at from local time + new offset
-     - If changed: Update row, cancel old Inngest timer, create new timer
+     - If changed: Update row with new desired_execution_at, increment schedule_version
+     - Create new Inngest timer with new time (old timer becomes stale)
   3. Send summary to affected coaches: "3 posts shifted by 1 hour due to DST"
   4. Log all changes for audit
+```
+
+**⚠️ CRITICAL: Timer Immutability Pattern**
+Inngest delayed events CANNOT be cancelled after `inngest.send()`. Instead, we enforce cancellation at execution time:
+
+```sql
+-- Add version tracking to scheduled_posts
+ALTER TABLE scheduled_posts ADD COLUMN schedule_version INTEGER DEFAULT 1;
+ALTER TABLE scheduled_posts ADD COLUMN execution_id UUID;
+```
+
+```typescript
+// PostContent handler - execution-time guard
+async function executePost(event: { postId: string, expectedVersion: number, expectedTime: Date }) {
+  const result = await db.query(`
+    SELECT * FROM scheduled_posts
+    WHERE id = $1
+    FOR UPDATE SKIP LOCKED
+  `, [event.postId]);
+
+  const post = result.rows[0];
+  if (!post) return; // Already claimed by another worker
+
+  // Guard: Only execute if version and time match
+  if (post.schedule_version !== event.expectedVersion) {
+    console.log('Stale timer, skipping (version mismatch)');
+    return;
+  }
+  if (post.desired_execution_at.getTime() !== event.expectedTime.getTime()) {
+    console.log('Stale timer, skipping (time mismatch)');
+    return;
+  }
+  if (post.timer_status !== 'pending') {
+    console.log('Already executed or failed');
+    return;
+  }
+
+  // Claim the post
+  const executionId = crypto.randomUUID();
+  await db.query(`
+    UPDATE scheduled_posts
+    SET timer_status = 'executing', execution_id = $2
+    WHERE id = $1
+  `, [event.postId, executionId]);
+
+  // Execute and mark complete
+  await postToInstagram(post);
+  await db.query(`
+    UPDATE scheduled_posts
+    SET timer_status = 'executed', executed_at = NOW()
+    WHERE id = $1
+  `, [event.postId]);
+}
 ```
 
 - For per-coach events (reminders, silence checks): Same pattern - store local + UTC, materialize timers just-in-time
@@ -257,6 +314,83 @@ Coach.auto_post_enabled_reason VARCHAR -- 'whatsapp_connected', 'pwa_push_verifi
 | PWA push permission granted + test successful | Set `can_auto_post = true` |
 | PWA push permission revoked | Set `can_auto_post = false` |
 | Coach manually disables | Set `can_auto_post = false` |
+
+**Reminder Infrastructure (for degraded mode):**
+When `can_auto_post = false`, Juno creates reminders instead of posting timers.
+
+```sql
+-- Reminders table
+CREATE TABLE reminders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  coach_id UUID REFERENCES coaches(id) ON DELETE CASCADE,
+  content_id UUID REFERENCES content(id) ON DELETE CASCADE,
+
+  -- Timing
+  remind_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  remind_timezone VARCHAR(50), -- e.g., 'America/New_York'
+
+  -- Delivery
+  channel VARCHAR(20) NOT NULL, -- 'email', 'push', 'sms', 'in_app'
+  status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'sent', 'failed', 'dismissed', 'actioned'
+
+  -- Tracking
+  sent_at TIMESTAMP WITH TIME ZONE,
+  actioned_at TIMESTAMP WITH TIME ZONE, -- When coach clicked "Posted" or "Skip"
+  failure_reason TEXT,
+
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_reminders_pending ON reminders (remind_at) WHERE status = 'pending';
+```
+
+**Reminder Lifecycle:**
+1. **Creation:** When coach approves content with `can_auto_post = false`
+   - Create `Reminder` row with `remind_at` = scheduled time - 15 min
+   - Set `channel = 'email'` (MVP), later: 'push' or 'sms' based on preferences
+   - Content.status = 'reminder_set' (not 'scheduled')
+
+2. **Delivery (background job, every 1 min):**
+   ```
+   reminder-sender job:
+     1. Query: SELECT * FROM reminders WHERE status = 'pending' AND remind_at <= NOW()
+     2. For each reminder:
+        - Send via channel (email with "Time to post!" + content preview + copy button)
+        - Update status = 'sent', sent_at = NOW()
+        - If send fails: status = 'failed', failure_reason = error
+   ```
+
+3. **Action tracking:**
+   - Email includes: "I posted it" button → updates `actioned_at`, Content.status = 'posted_manually'
+   - Email includes: "Skip" button → updates status = 'dismissed'
+   - Web portal shows pending reminders in "To Post" queue
+
+4. **Reconciliation with Content.status:**
+   | Reminder Status | Content Status | Next Action |
+   |-----------------|----------------|-------------|
+   | pending | reminder_set | Wait for remind_at |
+   | sent | reminder_set | Wait for coach action |
+   | actioned | posted_manually | Archive content |
+   | dismissed | draft | Return to drafts |
+   | failed | reminder_set | Retry or alert |
+
+**Email Template (MVP):**
+```
+Subject: Time to post: [Content title preview]
+
+Hey [Coach name],
+
+Your scheduled post is ready to go live!
+
+[Content preview - first 280 chars]
+
+[COPY TO CLIPBOARD] button
+[OPEN INSTAGRAM] button
+
+---
+[I POSTED IT] | [SKIP THIS ONE] | [RESCHEDULE]
+```
 
 **Technical Implementation:**
 - **Supabase Realtime** for real-time messaging (Vercel serverless can't hold WebSockets)
@@ -875,22 +1009,68 @@ COMMIT;
 
 **Non-Inngest Execution Path (True Fallback):**
 
+**⚠️ CRITICAL: Single Claiming Routine**
+ALL execution paths (Inngest, Vercel cron, Railway, reconciliation) MUST use the same `claimAndExecutePost()` function:
+
+```typescript
+// lib/posting/claim-and-execute.ts - SINGLE SOURCE OF TRUTH
+async function claimAndExecutePost(postId: string, expectedVersion?: number): Promise<boolean> {
+  const executionId = crypto.randomUUID();
+
+  // Atomic claim with SKIP LOCKED (prevents double-execution)
+  const claimed = await db.query(`
+    UPDATE scheduled_posts
+    SET timer_status = 'executing', execution_id = $2, claimed_at = NOW()
+    WHERE id = $1
+      AND timer_status = 'pending'
+      AND ($3::int IS NULL OR schedule_version = $3)
+    RETURNING *
+  `, [postId, executionId, expectedVersion ?? null]);
+
+  if (claimed.rows.length === 0) {
+    return false; // Already claimed or version mismatch
+  }
+
+  try {
+    await postToInstagram(claimed.rows[0]);
+    await db.query(`
+      UPDATE scheduled_posts
+      SET timer_status = 'executed', executed_at = NOW()
+      WHERE id = $1 AND execution_id = $2
+    `, [postId, executionId]);
+
+    // Emit billing event with execution_id for idempotency
+    await recordUsageEvent({
+      type: 'post_published',
+      coachId: claimed.rows[0].coach_id,
+      idempotencyKey: executionId,
+    });
+    return true;
+  } catch (error) {
+    await db.query(`
+      UPDATE scheduled_posts
+      SET timer_status = 'failed', failure_reason = $2
+      WHERE id = $1 AND execution_id = $3
+    `, [postId, error.message, executionId]);
+    throw error;
+  }
+}
+```
+
 **Layer 1: Vercel Cron (same-infra fallback):**
 - Separate Vercel cron job (every 5 min) that does NOT depend on Inngest
-- Queries `scheduled_posts WHERE timer_status = 'pending' AND desired_execution_at <= now() + interval '5 minutes'`
-- Executes posts directly via Instagram API (same code path as Inngest handler)
+- Queries `scheduled_posts WHERE timer_status = 'pending' AND desired_execution_at <= now()`
+- Calls `claimAndExecutePost()` for each - SAME function as Inngest handler
 - Only activates when Inngest health check fails (checked via environment flag)
-- Uses `SELECT ... FOR UPDATE SKIP LOCKED` to prevent race conditions with Inngest
 
 **Layer 2: External Worker (different-infra fallback - MVP REQUIRED):**
 - **Railway cron job** running outside Vercel entirely
 - Same logic as Layer 1, but on independent infrastructure
-- Queries Supabase directly (Supabase is already external to Vercel)
+- Queries Supabase directly, calls `claimAndExecutePost()` - SAME function
 - Runs continuously (every 5 min), checks both Inngest AND Vercel health
 - If either unhealthy: Execute due posts directly
 - **Cost:** ~$5/month on Railway for minimal always-on worker
-- **Why MVP required:** Cannot claim "autonomous posting" without redundancy. Vercel outage would otherwise take down both Inngest integration AND Layer 1 cron.
-- **Setup:** Week 3 task - deploy simple Node.js cron to Railway with Supabase connection
+- **Why MVP required:** Cannot claim "autonomous posting" without redundancy
 
 **Layer 3: Manual Disaster Recovery SOP:**
 - If all automated paths fail (Inngest + Vercel + Railway):
@@ -1776,17 +1956,67 @@ Before deletion, coach can request full data export:
 **Row-Level Security (RLS):**
 Every table enforces tenant isolation at database level:
 ```sql
-CREATE POLICY "coach_isolation" ON content FOR ALL USING (coach_id = auth.uid());
-CREATE POLICY "coach_isolation" ON conversations FOR ALL USING (coach_id = auth.uid());
-CREATE POLICY "coach_isolation" ON knowledge_items FOR ALL USING (coach_id = auth.uid());
+-- ⚠️ CRITICAL: All RLS policies must include deleted_at check
+CREATE POLICY "coach_isolation" ON content FOR ALL USING (
+  coach_id = auth.uid()
+  AND (SELECT deleted_at FROM coaches WHERE id = auth.uid()) IS NULL
+);
+CREATE POLICY "coach_isolation" ON conversations FOR ALL USING (
+  coach_id = auth.uid()
+  AND (SELECT deleted_at FROM coaches WHERE id = auth.uid()) IS NULL
+);
+CREATE POLICY "coach_isolation" ON knowledge_items FOR ALL USING (
+  coach_id = auth.uid()
+  AND (SELECT deleted_at FROM coaches WHERE id = auth.uid()) IS NULL
+);
 -- Applied to ALL coach-scoped tables
+```
+
+**Immediate Token Revocation on Deletion:**
+```sql
+-- When coach.deleted_at is set, immediately:
+-- 1. Revoke all Supabase auth sessions
+DELETE FROM auth.sessions WHERE user_id = $coach_id;
+
+-- 2. Invalidate refresh tokens
+DELETE FROM auth.refresh_tokens WHERE user_id = $coach_id;
+
+-- 3. Clear Redis session cache
+-- KEYS coach:{id}:session:* → DEL
+
+-- 4. RLS policy blocks access even if token somehow remains valid
+```
+
+**Service-Role Access for Compliance Tables:**
+Billing and audit records have NULL `coach_id` after deletion. Standard RLS blocks access.
+Solution: Use Supabase service role key for internal compliance tooling.
+
+```sql
+-- Create compliance schema with service-role access only
+CREATE SCHEMA compliance;
+
+-- Move audit/billing views to compliance schema
+CREATE VIEW compliance.usage_events_audit AS
+  SELECT * FROM public.usage_events;
+
+-- RLS bypass for service role
+ALTER TABLE usage_events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "service_role_access" ON usage_events
+  FOR ALL
+  USING (auth.role() = 'service_role');
+
+-- Application code for dispute handling:
+-- const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+-- await supabaseAdmin.from('usage_events').select('*').eq('deleted_coach_uuid', disputeCoachUUID);
 ```
 
 **Defense in Depth:**
 | Layer | Protection |
 |-------|------------|
-| Database | RLS policies on every table (even if app has bugs) |
+| Database | RLS policies on every table with `deleted_at` check |
 | API | Validate `coach_id` matches JWT on every request |
+| Auth | Immediate session/token revocation on deletion |
+| Compliance | Service-role path for billing/audit queries |
 | Cache | Redis keys namespaced: `coach:{id}:*` |
 | Background Jobs | Jobs scoped to single `coach_id`, never batched across coaches |
 | LLM Prompts | Context loaded per-coach, never mixed |
@@ -2794,14 +3024,17 @@ const canva = {
 
 ---
 
-## Success Criteria for MVP
+## Success Criteria for TRUE MINIMUM MVP
 
 The MVP is successful if:
-- [ ] 10 coaches actively using Juno
+- [ ] 10 coaches actively using Juno (free beta)
 - [ ] 70%+ 30-day retention
-- [ ] Average of 20+ posts created per coach per month
-- [ ] <5% of auto-posted content requires undo/correction
+- [ ] Average of 10+ captions generated per coach per month
+- [ ] <10% of generated content rejected without editing (quality bar)
+- [ ] Coaches manually posting content Juno generated (adoption signal)
 - [ ] NPS of 40+
+
+**Note:** No auto-posting metrics in MVP. "Posts created" = captions generated and copied by coach.
 
 ---
 

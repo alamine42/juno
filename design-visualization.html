@@ -1650,10 +1650,24 @@
                     <code style="font-size: 0.8rem; color: var(--text-muted);">{ content_id (UNIQUE), scheduled_local_time, scheduled_date, scheduled_timezone, desired_execution_at, timer_status }</code>
                 </div>
 
+                <div style="margin-bottom: 1rem; padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); border-radius: 0.5rem;">
+                    <strong style="color: var(--danger);">⚠️ SINGLE CLAIMING ROUTINE (prevents double-posting):</strong>
+                    <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem;">
+                        ALL execution paths (Inngest, Vercel cron, Railway, reconciliation) use the SAME <code>claimAndExecutePost()</code> function. Uses <code>FOR UPDATE SKIP LOCKED</code> + <code>execution_id</code> for idempotency. Billing events keyed by <code>execution_id</code>.
+                    </div>
+                </div>
+
                 <div style="margin-bottom: 1rem; padding: 0.75rem; background: rgba(16, 185, 129, 0.1); border: 1px solid var(--secondary); border-radius: 0.5rem;">
                     <strong style="color: var(--secondary);">Non-Inngest Execution Path (True Fallback):</strong>
                     <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem;">
-                        Vercel Cron (every 5 min) executes posts directly when Inngest unhealthy. Uses <code>SELECT ... FOR UPDATE SKIP LOCKED</code> to prevent race conditions. Shares NO dependencies with Inngest.
+                        Vercel Cron (every 5 min) calls <code>claimAndExecutePost()</code> when Inngest unhealthy. Railway worker (every 5 min) provides different-infra redundancy. All paths share the claiming routine.
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 1rem; padding: 0.75rem; background: rgba(139, 92, 246, 0.1); border: 1px solid #8b5cf6; border-radius: 0.5rem;">
+                    <strong style="color: #8b5cf6;">Timer Immutability Pattern:</strong>
+                    <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem;">
+                        Inngest timers CANNOT be cancelled. On reschedule/DST: increment <code>schedule_version</code>, create new timer. Handler checks version match before executing—stale timers no-op.
                     </div>
                 </div>
 
