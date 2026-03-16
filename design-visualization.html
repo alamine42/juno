@@ -914,6 +914,30 @@
                         <div style="font-size: 0.75rem; color: var(--text-muted);">Push → Email → SMS (future)</div>
                     </div>
                 </div>
+                <div style="margin-top: 1rem; padding: 1rem; background: rgba(99, 102, 241, 0.1); border: 1px solid var(--primary); border-radius: 0.5rem;">
+                    <strong style="color: var(--primary);">Authentication Flow:</strong>
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin-top: 0.5rem; font-size: 0.75rem;">
+                        <div style="background: var(--bg-card); padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+                            <strong>Login</strong><br>
+                            <span style="color: var(--text-muted);">JWT in httpOnly cookie</span>
+                        </div>
+                        <div style="background: var(--bg-card); padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+                            <strong>Connect</strong><br>
+                            <span style="color: var(--text-muted);">JWT → Supabase Realtime</span>
+                        </div>
+                        <div style="background: var(--bg-card); padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+                            <strong>Heartbeat</strong><br>
+                            <span style="color: var(--text-muted);">Every 30s, track presence</span>
+                        </div>
+                        <div style="background: var(--bg-card); padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+                            <strong>Refresh</strong><br>
+                            <span style="color: var(--text-muted);">Auto before expiry</span>
+                        </div>
+                    </div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">
+                        Security: 60 msg/min rate limit, 4KB message limit, RLS filters by coach_id
+                    </div>
+                </div>
             </div>
 
             <div class="card">
@@ -1613,17 +1637,25 @@
                     <strong style="color: var(--primary);">scheduled_posts table:</strong>
                     <code style="font-size: 0.8rem; color: var(--text-muted);">{ content_id, desired_execution_at, timer_status: pending|dispatched|executed }</code>
                 </div>
+
+                <div style="margin-bottom: 1rem; padding: 0.75rem; background: rgba(16, 185, 129, 0.1); border: 1px solid var(--secondary); border-radius: 0.5rem;">
+                    <strong style="color: var(--secondary);">Non-Inngest Execution Path (True Fallback):</strong>
+                    <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem;">
+                        Vercel Cron (every 5 min) executes posts directly when Inngest unhealthy. Uses <code>SELECT ... FOR UPDATE SKIP LOCKED</code> to prevent race conditions. Shares NO dependencies with Inngest.
+                    </div>
+                </div>
+
                 <div class="flow">
                     <div class="flow-step">Health Check<br><small>(every 5 min)</small></div>
                     <span class="flow-arrow">→</span>
                     <div class="flow-step" style="border-color: var(--danger);">Inngest Down<br><small>&gt;15 min</small></div>
                     <span class="flow-arrow">→</span>
-                    <div class="flow-step warning">Pause + Queue</div>
+                    <div class="flow-step" style="background: rgba(16, 185, 129, 0.2); border-color: var(--secondary);">Vercel Cron<br><small>Takes over</small></div>
                     <span class="flow-arrow">→</span>
-                    <div class="flow-step secondary">Recovery</div>
+                    <div class="flow-step secondary">Direct Execute</div>
                 </div>
                 <div style="margin-top: 1rem; padding: 1rem; background: var(--bg); border-radius: 0.5rem;">
-                    <strong style="color: var(--secondary);">Recovery Catch-Up Logic:</strong>
+                    <strong style="color: var(--secondary);">Recovery Catch-Up Logic (when Inngest returns):</strong>
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 0.75rem; font-size: 0.8rem;">
                         <div style="background: var(--bg-card); padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
                             <strong>Missed &lt;2hr + approved</strong><br>
@@ -1735,6 +1767,12 @@
                     <div style="background: var(--bg); padding: 0.75rem; border-radius: 0.5rem;">
                         <strong style="color: #8b5cf6;">Cache Key:</strong>
                         <div style="font-size: 0.75rem; color: var(--text-muted);">content_revision_id (24h TTL)</div>
+                    </div>
+                </div>
+                <div style="margin-top: 0.75rem; padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); border-radius: 0.5rem;">
+                    <strong style="color: var(--danger);">Asset Hash Verification:</strong>
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">
+                        SHA-256 hash stored per media file. Before using cached moderation, verify hashes match. Prevents bypass via external edits to S3. Mismatch → force re-moderation.
                     </div>
                 </div>
             </div>
@@ -2295,6 +2333,39 @@
 
         <!-- Timeline Tab -->
         <div id="timeline" class="tab-content">
+            <div class="card" style="border: 2px solid var(--warning);">
+                <h2 style="color: var(--warning);">⚠️ TRUE MINIMUM MVP (If Timeline Pressured)</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    Weeks 1-4 only. A coach can get value from "generate caption → approve → copy/paste to Instagram" without automation.
+                </p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <h4 style="color: var(--secondary); margin-bottom: 0.5rem;">✓ Include (MVP)</h4>
+                        <ul style="color: var(--text-muted); font-size: 0.8rem; padding-left: 1.25rem;">
+                            <li>Web chat only (no WhatsApp)</li>
+                            <li>Claude generates captions</li>
+                            <li>Manual copy/paste to Instagram</li>
+                            <li>Basic Green/Yellow/Red moderation</li>
+                            <li>Simple date/time picker</li>
+                            <li>Quick notes only</li>
+                            <li>Free tier only</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 style="color: var(--primary); margin-bottom: 0.5rem;">→ Defer (Weeks 5-8)</h4>
+                        <ul style="color: var(--text-muted); font-size: 0.8rem; padding-left: 1.25rem;">
+                            <li>WhatsApp integration</li>
+                            <li>Auto-posting to Instagram API</li>
+                            <li>Voice learning, memory system</li>
+                            <li>Calendar sync</li>
+                            <li>Analytics dashboard</li>
+                            <li>Stripe billing</li>
+                            <li>File uploads, RAG</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
             <div class="card">
                 <h2>8-Week MVP Timeline</h2>
                 <div class="timeline">

@@ -72,19 +72,23 @@ Create space and time for coaches to do what they do best—coach—by automatin
 - Store `inngest_event_id` on Content record for tracking
 
 **Path B: Sweep Validation (backup + DST correction)**
-- `scheduler-sweep` runs every 10 minutes (not hourly)
-- Queries posts where local time is within next 30 minutes
+- `scheduler-sweep` runs every 10 minutes
+- Queries posts using indexed UTC column: `WHERE desired_execution_at BETWEEN now() AND now() + interval '2 hours'`
 - For each post: Check if Inngest timer exists and is correct
 - If no timer or DST shifted the time → create/update timer
 - Ensures posts scheduled minutes ahead are never missed
+- **Timer window matches Path A:** Both paths use 2-hour window (no blind spots)
 
-**Content posts stored with local time:**
-  1. Coach approves post for "Tuesday 9am" → Store as `scheduled_local_time` + `scheduled_date` + `scheduled_timezone` (snapshot at approval)
+**Content posts stored with dual timestamps:**
+  1. Coach approves post for "Tuesday 9am" → Store:
+     - `scheduled_local_time` + `scheduled_date` + `scheduled_timezone` (for UX display)
+     - `desired_execution_at` (UTC, computed, indexed - for sweep queries)
   2. **Immediately** fire Inngest timer (Path A) if within 2 hours
   3. Sweep validates and corrects if needed (Path B)
   4. **Clarification on 2-hour limit:** Coaches CAN schedule posts for any future date (weekly calendar). The 2-hour limit applies only to *materializing Inngest timers*—we don't create timers for posts >2 hours away. The sweep continuously materializes timers as posts enter the 2-hour window.
   5. **Timezone snapshot:** `scheduled_timezone` is captured at approval time and never changes. If coach travels or updates their profile timezone, already-scheduled posts are unaffected.
-- For per-coach events (reminders, silence checks): Same pattern - store local + timezone snapshot, materialize UTC just-in-time
+  6. **DST handling:** On DST change, `desired_execution_at` is recomputed from local time + timezone. Sweep detects mismatch and updates timer.
+- For per-coach events (reminders, silence checks): Same pattern - store local + UTC, materialize timers just-in-time
 
 **Calendar Sync Conflict Resolution:**
 - Fetch current calendar state with ETags before writing
@@ -193,6 +197,29 @@ If WhatsApp Business API approval is delayed, the web portal includes a native c
 - If browser push denied: Offer email notification opt-in for urgent messages
 - Email fallback: "Juno needs your attention" with deep link to web chat
 - SMS fallback (future): Phone number already captured for WhatsApp linking
+
+**Authentication Flow (Web Chat):**
+- **Session-based auth via Supabase Auth:**
+  - Coach logs in via portal (email/password or magic link)
+  - Supabase issues JWT with `coach_id` claim, stored in httpOnly cookie
+  - JWT refreshed automatically by Supabase client library (7-day expiry, 1-hour refresh)
+- **Chat connection auth:**
+  1. On chat load: Client sends JWT to Supabase Realtime connection
+  2. Supabase validates JWT and extracts `coach_id`
+  3. RLS policy: `conversation_messages` filtered by `coach_id` from JWT
+  4. Client can only subscribe to own coach's conversation channel
+- **Presence & heartbeat:**
+  - Client sends heartbeat every 30s (or on message send)
+  - Server tracks `last_active_at` in `conversations` table
+  - Stale sessions (no heartbeat >5 min): Force re-auth on next interaction
+- **Token refresh during chat:**
+  - Supabase client auto-refreshes JWT before expiry
+  - If refresh fails (e.g., password changed): Disconnect, show "Session expired, please log in"
+  - Chat messages queued during re-auth, sent after successful login
+- **Security controls:**
+  - Rate limit: 60 messages/minute per coach (prevents abuse)
+  - Message size limit: 4KB (prevents payload attacks)
+  - No anonymous access: All chat requires authenticated session
 
 **Cross-Channel Consistency (Multi-Channel Sync):**
 When coach uses both WhatsApp and web chat:
@@ -311,6 +338,17 @@ Moderation runs at **three checkpoints** to prevent bypass:
 - If revision unchanged and cache hit: Use cached tier, skip re-moderation
 - Cache TTL: 24 hours (re-moderate if approaching posting time and cache stale)
 - Cache invalidated on any content edit (new revision = new cache key)
+
+**Asset Hash Verification (Cache Bypass Prevention):**
+- On media upload: Compute SHA-256 hash of file contents, store in `ContentRevision.media_hashes[]`
+- Before using cached moderation result:
+  1. Re-fetch media files from storage
+  2. Compute current hash of each media file
+  3. Compare against stored `media_hashes[]`
+  4. If ANY hash mismatch: Invalidate cache, force re-moderation
+- Prevents: External edits to media files bypassing moderation (e.g., editing S3 directly)
+- Hash check is lightweight (<50ms) compared to full moderation (~2-5s)
+- Log hash mismatches as security events for audit
 
 **Tiered Failure Response (not all failures are equal):**
 | Content Tier | Infrastructure Failure | Response |
@@ -533,7 +571,23 @@ Coaches with personal accounts can still get value:
   3. Surface "Post Now" button in web portal for pending content
   4. Continue recording scheduling intent to `scheduled_posts` table
 
-**Recovery with catch-up logic:**
+**Non-Inngest Execution Path (True Fallback):**
+- **Vercel Cron as Independent Executor:**
+  - Separate Vercel cron job (every 5 min) that does NOT depend on Inngest
+  - Queries `scheduled_posts WHERE timer_status = 'pending' AND desired_execution_at <= now() + interval '5 minutes'`
+  - Executes posts directly via Instagram API (same code path as Inngest handler)
+  - Only activates when Inngest health check fails (checked via environment flag)
+  - Uses `SELECT ... FOR UPDATE SKIP LOCKED` to prevent race conditions with Inngest
+
+- **Execution Flow:**
+  1. Vercel cron checks `inngest_healthy` flag (set by health monitor)
+  2. If healthy: Skip (Inngest handles execution)
+  3. If unhealthy: Query due posts, execute directly, mark `timer_status: executed`
+  4. Log all fallback executions for audit trail
+
+- **Critical:** This cron job shares NO dependencies with Inngest - different service, different execution path
+
+**Recovery with catch-up logic (when Inngest returns):**
   1. On Inngest healthy, query `scheduled_posts` where `timer_status != executed` AND `desired_execution_at` has passed or is within 2hr
   2. For each missed job (where `desired_execution_at < now`):
      - If missed by <2 hours AND coach pre-approved: Execute immediately (backfill)
@@ -760,7 +814,9 @@ Content
 ├── status (draft, scheduled, posted, failed, deleted)
 ├── scheduled_local_time (TIME - e.g., "09:00", for DST-safe scheduling)
 ├── scheduled_date (DATE - e.g., "2026-03-17")
-├── scheduled_at (TIMESTAMP - computed UTC, updated by scheduler-sweep)
+├── scheduled_timezone (TEXT - e.g., "America/New_York", IANA timezone)
+├── desired_execution_at (TIMESTAMP WITH TIME ZONE - UTC, indexed, computed from local + tz)
+├── scheduled_at (TIMESTAMP - legacy/computed UTC, updated by scheduler-sweep)
 ├── posted_at
 ├── platform (instagram)
 ├── external_id (Instagram post ID, nullable)
@@ -1236,6 +1292,30 @@ Week 8: Hardening
 - Week 1-4: Build end-to-end slice (chat → content → manual post)
 - Week 5-6: Add automation layer (scheduling, auto-post)
 - Week 7-8: Hardening + billing (defer analytics if needed)
+
+**TRUE MINIMUM MVP (If timeline pressured - Week 1-4 only):**
+
+| Feature | MVP (Weeks 1-4) | Deferred (Weeks 5-8) |
+|---------|-----------------|---------------------|
+| Chat interface | Web chat only | WhatsApp integration |
+| Content generation | Claude generates captions | Voice learning, memory |
+| Posting | Manual copy/paste | Auto-posting via API |
+| Moderation | Basic Green/Yellow/Red | Staged retries, caching |
+| Scheduling | Simple date/time picker | DST-aware, timezone handling |
+| Analytics | None | Basic dashboard |
+| Billing | Free tier only | Stripe integration |
+| Knowledge base | Quick notes only | File uploads, RAG |
+
+**Rationale:** A coach can get value from "generate caption → approve → copy/paste to Instagram" without automation. Everything else is convenience, not core value.
+
+**Explicit Deferrals (Post-MVP):**
+- WhatsApp Business API (replace with web chat)
+- Auto-posting to Instagram API
+- Calendar sync with Google Calendar
+- Advanced memory/learning system
+- Canva integration
+- Analytics dashboard
+- Fitness coaching skills (use generic prompts initially)
 
 ### Week 1: Foundation
 - [ ] Next.js project setup with TypeScript
