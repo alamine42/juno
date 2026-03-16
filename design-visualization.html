@@ -1732,6 +1732,36 @@
             </div>
 
             <div class="card">
+                <h2>Video/Audio Moderation (Reels & Voice)</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    Reels can have audio claims and text overlays. Voice notes need transcription.
+                </p>
+                <div class="flow">
+                    <div class="flow-step">Video/Audio</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step" style="background: rgba(139, 92, 246, 0.1); border-color: #8b5cf6;">Whisper<br><small>Transcribe</small></div>
+                    <span class="flow-arrow">+</span>
+                    <div class="flow-step warning">Frame Sample<br><small>1/sec OCR</small></div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">Classify All Text</div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 1rem; font-size: 0.8rem;">
+                    <div style="background: var(--bg); padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+                        <strong>Reels</strong><br>
+                        <span style="color: var(--text-muted);">~$0.01-0.02/video</span>
+                    </div>
+                    <div style="background: var(--bg); padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+                        <strong>Voice Notes</strong><br>
+                        <span style="color: var(--text-muted);">~$0.006/minute</span>
+                    </div>
+                    <div style="background: var(--bg); padding: 0.5rem; border-radius: 0.25rem; text-align: center;">
+                        <strong>Text Overlays</strong><br>
+                        <span style="color: var(--text-muted);">~$0.005/video</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
                 <h2>Fail-Closed Moderation + Degradation Plan</h2>
                 <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
                     Staged retries before blocking. Cache results. Tiered response based on content risk.
@@ -2242,6 +2272,32 @@
             </div>
 
             <div class="card">
+                <h2>PII Safeguards (RAG Injection Prevention)</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    Automatic PII detection prevents client data from being injected into public content.
+                </p>
+                <div class="flow">
+                    <div class="flow-step">KB Item Upload</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step" style="background: rgba(239, 68, 68, 0.1); border-color: var(--danger);">NER Scan<br><small>Names, emails, phones</small></div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step warning">Auto-Flag PII</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">Block from RAG</div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; margin-top: 1rem;">
+                    <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid var(--secondary); padding: 0.75rem; border-radius: 0.5rem;">
+                        <strong style="color: var(--secondary);">PII-Free Items</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">Auto-included in content generation context</div>
+                    </div>
+                    <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); padding: 0.75rem; border-radius: 0.5rem;">
+                        <strong style="color: var(--danger);">PII-Containing Items</strong>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">Require explicit coach approval per use</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
                 <h2>Upload Flows</h2>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
                     <div>
@@ -2327,6 +2383,74 @@
                             <div class="field"><span class="field-name">created_at</span><span class="field-type">TIMESTAMP</span></div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Reference Materials (Professional Resources)</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    System-wide professional resources that enhance Juno's domain expertise. Unlike coach knowledge base items, these are curated resources available to all coaches.
+                </p>
+                <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid #8b5cf6; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
+                    <strong style="color: #8b5cf6;">Initial Resource: NSCA Strength & Conditioning Manual</strong>
+                    <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem;">
+                        Industry-standard reference for exercise programming. Covers periodization, exercise technique, program design, assessments. ~600 pages chunked for RAG retrieval.
+                    </div>
+                </div>
+                <h3 style="margin-bottom: 0.75rem;">RAG Pipeline</h3>
+                <div class="flow">
+                    <div class="flow-step">PDF Upload</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step">Text Extract</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step" style="background: rgba(139, 92, 246, 0.1); border-color: #8b5cf6;">Chunk (500 tokens)</div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-step primary">Embed + Store</div>
+                </div>
+                <h3 style="margin-top: 1.5rem; margin-bottom: 0.75rem;">Retrieval Integration</h3>
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; font-size: 0.8rem;">
+                    <div style="background: var(--bg); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong>1. Detect Intent</strong><br>
+                        <span style="color: var(--text-muted);">Fitness-related task?</span>
+                    </div>
+                    <div style="background: var(--bg); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong>2. Query Chunks</strong><br>
+                        <span style="color: var(--text-muted);">Semantic search top 3-5</span>
+                    </div>
+                    <div style="background: var(--bg); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong>3. Add Context</strong><br>
+                        <span style="color: var(--text-muted);">Include in LLM prompt</span>
+                    </div>
+                    <div style="background: var(--bg); padding: 0.75rem; border-radius: 0.5rem; text-align: center;">
+                        <strong>4. Cite Sources</strong><br>
+                        <span style="color: var(--text-muted);">"Based on NSCA..."</span>
+                    </div>
+                </div>
+                <div class="data-model" style="margin-top: 1.5rem;">
+                    <div class="entity">
+                        <div class="entity-header" style="background: rgba(139, 92, 246, 0.2);">ReferenceSource</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">name</span><span class="field-type">"NSCA Essentials..."</span></div>
+                            <div class="field"><span class="field-name">type</span><span class="field-type">textbook | certification</span></div>
+                            <div class="field"><span class="field-name">version, edition</span><span class="field-type">VARCHAR</span></div>
+                            <div class="field"><span class="field-name">enabled</span><span class="field-type">BOOLEAN</span></div>
+                        </div>
+                    </div>
+                    <div class="entity">
+                        <div class="entity-header" style="background: rgba(139, 92, 246, 0.2);">ReferenceChunk</div>
+                        <div class="entity-fields">
+                            <div class="field"><span class="field-name">source_id</span><span class="field-type">FK</span></div>
+                            <div class="field"><span class="field-name">content</span><span class="field-type">TEXT (chunk)</span></div>
+                            <div class="field"><span class="field-name">embedding</span><span class="field-type">vector(1536)</span></div>
+                            <div class="field"><span class="field-name">metadata</span><span class="field-type">{page, chapter, section}</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem; padding: 0.75rem; background: var(--bg); border-radius: 0.5rem;">
+                    <strong style="color: var(--secondary);">Future Sources (Post-MVP):</strong>
+                    <span style="font-size: 0.85rem; color: var(--text-muted);">
+                        ACSM Guidelines, NASM Corrective Exercise, Precision Nutrition, ACE Manual
+                    </span>
                 </div>
             </div>
         </div>

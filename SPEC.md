@@ -98,6 +98,34 @@ Create space and time for coaches to do what they do best—coach—by automatin
 - Coach resolves: "Keep mine", "Accept external", or "Merge" (shift times)
 - Never silently overwrite client sessions
 
+**Incremental Sync Strategy (Google Calendar):**
+- **syncToken:** Store per-coach `syncToken` from Google Calendar API
+- **Incremental fetch:** On each sync, use `syncToken` to get only changed events
+- **Full resync trigger:** If `syncToken` invalid (410 error), perform full calendar resync
+- **Missed deletions:** Incremental sync includes deleted events; apply locally
+- **Duplicate detection:** Store `external_id` (Google event ID) + `etag` per event
+
+**Bidirectional Sync Flow:**
+```
+Juno → Google: Use INSERT/UPDATE with If-Match ETag header
+Google → Juno: Push notification (webhook) OR periodic poll with syncToken
+              │
+              ├── Event created → Create local record with external_id
+              ├── Event updated → Compare etag, update if changed
+              └── Event deleted → Soft-delete local record
+```
+
+**Webhook Failure Recovery:**
+- Google push notifications can fail silently
+- Fallback: Poll every 5 minutes if no webhook received in 15 minutes
+- On poll, use syncToken for efficient delta
+- If persistent webhook failures: Alert coach, offer manual sync button
+
+**Audit Trail:**
+- Log all calendar sync operations with `sync_direction` (inbound/outbound)
+- On conflict resolution, log coach's choice for audit
+- If event "reappears" after deletion: Show in activity log with explanation
+
 **Not in MVP:**
 - Client booking/payment
 - Outlook calendar
@@ -137,17 +165,28 @@ The web portal is a lightweight companion to WhatsApp, not a full dashboard repl
 5. WhatsApp/web chat sends deep links to portal for rich reviews
 
 ### 5. Web Chat Fallback (If WhatsApp Delayed)
-**Goal:** Provide full Juno experience without WhatsApp dependency
+**Goal:** Provide functional Juno experience without WhatsApp dependency
 
-If WhatsApp Business API approval is delayed, the web portal includes a native chat interface:
+If WhatsApp Business API approval is delayed, the web portal includes a native chat interface.
 
-**Features (parity with WhatsApp):**
+**⚠️ This is a FUNCTIONAL FALLBACK, not full parity.** WhatsApp offers better notification reliability, voice messages, and always-on accessibility. Web chat covers core workflows but has limitations.
+
+**Features (functional coverage):**
 - Real-time chat with Juno in browser
 - Quick-action buttons (same as WhatsApp quick replies)
 - Proactive nudges via browser notifications (with permission)
 - Deep links to content review, calendar, analytics
 - Mobile-responsive design for on-the-go use
 - Push notifications for scheduled post confirmations
+
+**Known Limitations vs WhatsApp:**
+| Feature | WhatsApp | Web Chat |
+|---------|----------|----------|
+| Push reliability | High (always delivered) | Medium (browser must be open or allow push) |
+| Voice messages | Supported | Not supported |
+| Offline access | Full (queued messages) | Limited (localStorage queue) |
+| Response time | Instant | ~500ms latency |
+| Phone lock screen | Notifications appear | Requires browser open |
 
 **Technical Implementation:**
 - **Supabase Realtime** for real-time messaging (Vercel serverless can't hold WebSockets)
@@ -172,10 +211,23 @@ If WhatsApp Business API approval is delayed, the web portal includes a native c
 
 **Accessibility Requirements (Web Chat):**
 - **Keyboard navigation:** All quick-reply buttons accessible via Tab, activated via Enter/Space
+  - Keyboard shortcuts: `Ctrl+Enter` to send, `Escape` to cancel pending action
+  - Quick reply grid: Arrow keys navigate between buttons
 - **Screen reader support:** ARIA roles (`role="log"` for message list, `role="button"` for actions)
+  - `aria-live="polite"` region for new messages and typing indicators
+  - `aria-label` on quick reply buttons with full action description
+  - Message timestamps announced: "Juno, 2 minutes ago"
+  - Attachments: `alt` text for images, file descriptions for documents
 - **Focus management:** Auto-focus input after sending; announce new messages to screen readers
+  - Quick reply insertion: Focus moves to input field after selection
+  - Error states: Focus moves to error banner with action buttons
 - **High contrast mode:** Respect `prefers-contrast` media query
+  - Color contrast ratio ≥4.5:1 for all text (WCAG AA)
+  - Banner colors tested for accessibility (red/yellow/green with text alternatives)
 - **Reduced motion:** Respect `prefers-reduced-motion` for typing indicators, animations
+- **Notification accessibility:**
+  - When browser push denied: Screen reader announcement of fallback options
+  - Email notification fallback text includes full context (not just "tap to open")
 
 **UI States (explicitly defined):**
 | State | Visual | Behavior |
@@ -192,6 +244,37 @@ If WhatsApp Business API approval is delayed, the web portal includes a native c
 - **Retry banner:** "Some messages couldn't send. [Retry] [Discard]"
 - **Reconnection:** Exponential backoff (1s, 2s, 4s, max 30s), auto-reconnect on network change
 - **Stale tab:** If tab inactive >5 min and reconnects, fetch missed messages before resuming
+
+**Message Ordering (Multi-Device & Offline Sync):**
+Problem: Coach queues messages offline, reconnects on multiple devices → order breaks.
+
+**Client-Side Sequence Numbers:**
+- Each client generates local sequence number per queued message: `{ client_id, client_seq, content }`
+- On reconnect, send queue in order with sequence numbers
+- Server enforces ordering within same `client_id`
+
+**Server-Side Handling:**
+```
+Message received → Check (conversation_id, client_id, client_seq)
+       │
+       ├── If client_seq already exists → Duplicate, ignore (idempotent)
+       │
+       ├── If client_seq is next expected → Insert, increment expected
+       │
+       └── If client_seq is future → Hold in buffer, wait for missing seqs (up to 30s)
+                                    → If timeout, insert anyway with gap marker
+```
+
+**Per-Device Queue Flush:**
+- On reconnect, send `queue_flush_start` event with device ID
+- Send all queued messages
+- Send `queue_flush_end` event
+- Server acknowledges: "5 messages received from device X"
+- Client clears localStorage queue only after acknowledgment
+
+**Quick Reply State:**
+- Quick reply buttons include `context_message_id` they reference
+- If context message is stale (different from current state), disable button with "Options have changed"
 
 **Notification Fallbacks:**
 - If browser push denied: Offer email notification opt-in for urgent messages
@@ -301,6 +384,40 @@ Moderation runs at **three checkpoints** to prevent bypass:
 - Canva templates: Render to image, OCR, then classify
 - Cost: ~$0.002 per image (Vision API), acceptable for trust/safety
 
+**Video/Audio Moderation (Reels, Voice Notes):**
+Coaches can upload Reels with audio/text overlays or send voice notes via WhatsApp. These require additional moderation:
+
+| Content Type | Moderation Pipeline | Cost |
+|--------------|---------------------|------|
+| Reels (video) | Frame sampling (1/sec) + OCR + Whisper transcription | ~$0.01-0.02/video |
+| Voice notes | Whisper transcription → text classification | ~$0.006/minute |
+| Text overlays | Frame sampling + OCR | ~$0.005/video |
+
+**Video Moderation Pipeline:**
+```
+Video Upload → Extract Audio → Whisper Transcription
+            │                          ↓
+            └→ Frame Sampling ──→ OCR Text Overlays
+                    │                    ↓
+                    └→ Vision Check ─────┴──→ Combine All Text → Classify
+```
+
+1. **Audio extraction:** FFmpeg to extract audio track
+2. **Transcription:** OpenAI Whisper API (or Whisper.cpp for cost)
+3. **Frame sampling:** Extract 1 frame/second, batch to Claude Vision
+4. **Text overlay detection:** OCR on frames for burned-in text
+5. **Combine:** Merge transcription + overlay text + caption
+6. **Classify:** Same tiering pipeline as text content
+
+**WhatsApp Voice Notes:**
+- Transcribe via Whisper before processing
+- Apply same content classification
+- If coach sends voice note with content request: Transcribe → generate content → moderate
+
+**Outbound Message Moderation:**
+- WhatsApp nudges that mention client names → re-moderate before sending
+- Push notifications with content previews → truncate/redact PII
+
 **Per-Coach Topic Allow-Lists:**
 - When coach approves a Yellow-tier post, offer: "Allow similar content in the future?"
 - Store approved categories: `["weight_loss_journey", "mindset", "transformations"]`
@@ -401,14 +518,66 @@ Moderation runs at **three checkpoints** to prevent bypass:
 - Stories cannot be undone after posting
 - External caches may retain deleted content briefly
 - Coach notified when undo is partial or impossible
+
+**Undo ↔ Billing State Transitions:**
+Billing and undo must stay synchronized to prevent disputes:
+
+| Undo State | Billing State | Action |
+|------------|---------------|--------|
+| Undo pending | Hold billing | Do NOT mark UsageEvent as `billable` until posting confirmed |
+| Undo complete (within 1hr) | Credit issued | Write compensating UsageEvent with `quantity: -1` |
+| Undo failed | Billing stands | No credit; notify coach "Post could not be removed, charge applies" |
+| Undo partial | Partial credit | Notify coach; may require manual credit issuance |
+
+**Billing Safety Flow:**
+```
+Post triggered → UsageEvent created (billable: false, status: pending)
+       │
+       ▼
+Instagram API confirms → UsageEvent updated (billable: true)
+       │
+       ├── If undo within 1hr → Compensating event, net zero
+       │
+       └── If undo fails → billable: true stands, coach notified
+```
+
+**SLA Documentation:**
+- Undo within 1 hour: Guaranteed no charge
+- Undo 1-24 hours: Manual credit upon request
+- Undo after 24 hours: No credit (unless exceptional circumstance)
+- Surface this policy in web portal settings
 - WhatsApp/web chat notifications mirror activity log states
 
 ### Silence Handling
-- If coach unresponsive for 72+ hours:
-  - Pause non-critical automations
-  - Send check-in message via WhatsApp/web chat
-  - Continue only pre-approved scheduled content
-  - After 7 days: Pause all automations, send email alert
+**⚠️ Opt-In Required (CAN-SPAM/Messaging Compliance):**
+- Silence handling is **opt-in during onboarding**
+- Coach configures thresholds and channels
+- Must include unsubscribe/opt-out in all automated messages
+
+**Default Settings (configurable):**
+| Setting | Default | Options |
+|---------|---------|---------|
+| Check-in threshold | 72 hours | 24h, 48h, 72h, 1 week, never |
+| Check-in channel | WhatsApp/web chat | WhatsApp, web chat, email, none |
+| Pause automations | After 7 days | 3 days, 7 days, 14 days, never |
+| Do-not-disturb | None | Set daily/weekly windows |
+
+**Do-Not-Disturb Windows:**
+- Coach sets DND windows: "Don't contact me Sat-Sun" or "Not before 9am"
+- All automated messages (nudges, check-ins) respect DND
+- Urgent alerts (payment failed, account issue) can override with warning
+
+**Vacation Mode:**
+- Coach can set vacation dates in portal
+- During vacation: Pause all proactive messages, continue pre-approved posts
+- Auto-resume on return date
+- Surface "Welcome back!" summary on return
+
+**Compliance Checklist:**
+- [ ] All automated emails include unsubscribe link (CAN-SPAM)
+- [ ] SMS messages include STOP reply option
+- [ ] Track opt-out requests and honor immediately
+- [ ] Log all automated outreach for audit
 
 ---
 
@@ -558,11 +727,43 @@ Coaches with personal accounts can still get value:
 - The 2hr timer materialization window only controls when Inngest timers are created, not when intent is recorded
 - This ensures posts approved days ahead survive Inngest outages that occur when they enter the execution window
 
-**Job Tracking:**
-- All pending actions stored in `pending_jobs` table before sending to Inngest
-- Store `desired_execution_at` (original intended timestamp) on each job
-- Mark job as `dispatched` when Inngest accepts, `completed` when done
+**⚠️ SINGLE SOURCE OF TRUTH: `scheduled_posts` table**
+```
+scheduled_posts (CANONICAL SOURCE)
+├── content_id (FK to Content, UNIQUE)
+├── desired_execution_at (TIMESTAMP WITH TIME ZONE - indexed)
+├── scheduled_timezone (TEXT - IANA)
+├── timer_status (pending | dispatched | executed | failed)
+├── inngest_event_id (nullable - tracks Inngest timer)
+├── created_at, updated_at
+└── CONSTRAINT: One row per content_id (no duplicates)
+
+Content table:
+├── status (draft | scheduled | posted | failed)
+├── current_revision_id
+└── References scheduled_posts via content_id (NOT duplicated scheduling fields)
+```
+
+**Reschedule Flow (transactional):**
+```sql
+BEGIN;
+  -- Update scheduled_posts (source of truth)
+  UPDATE scheduled_posts SET
+    desired_execution_at = $new_time,
+    timer_status = 'pending'
+  WHERE content_id = $content_id;
+
+  -- Cancel old Inngest timer if exists
+  -- (handled by application code, not SQL)
+
+  -- Content.status stays 'scheduled' (no change needed)
+COMMIT;
+```
+
+**Job Tracking (derived, NOT source of truth):**
+- `pending_jobs` table is for operational monitoring only
 - Health check: Vercel cron (every 5 min) checks Inngest API status
+- If `scheduled_posts` and `pending_jobs` diverge: Trust `scheduled_posts`, rebuild timers
 
 **Outage Detection & Response:**
 - If Inngest unhealthy for >15 minutes:
@@ -572,12 +773,29 @@ Coaches with personal accounts can still get value:
   4. Continue recording scheduling intent to `scheduled_posts` table
 
 **Non-Inngest Execution Path (True Fallback):**
-- **Vercel Cron as Independent Executor:**
-  - Separate Vercel cron job (every 5 min) that does NOT depend on Inngest
-  - Queries `scheduled_posts WHERE timer_status = 'pending' AND desired_execution_at <= now() + interval '5 minutes'`
-  - Executes posts directly via Instagram API (same code path as Inngest handler)
-  - Only activates when Inngest health check fails (checked via environment flag)
-  - Uses `SELECT ... FOR UPDATE SKIP LOCKED` to prevent race conditions with Inngest
+
+**Layer 1: Vercel Cron (same-infra fallback):**
+- Separate Vercel cron job (every 5 min) that does NOT depend on Inngest
+- Queries `scheduled_posts WHERE timer_status = 'pending' AND desired_execution_at <= now() + interval '5 minutes'`
+- Executes posts directly via Instagram API (same code path as Inngest handler)
+- Only activates when Inngest health check fails (checked via environment flag)
+- Uses `SELECT ... FOR UPDATE SKIP LOCKED` to prevent race conditions with Inngest
+
+**Layer 2: External Worker (different-infra fallback - MVP optional, Post-MVP required):**
+- **Railway/Cloud Run cron job** running outside Vercel entirely
+- Same logic as Layer 1, but on independent infrastructure
+- Queries Supabase directly (Supabase is already external to Vercel)
+- Activates when BOTH Inngest AND Vercel appear unhealthy (checked via uptime monitor)
+- **Cost:** ~$5/month on Railway for minimal always-on worker
+- **Why needed:** Vercel outage would take down both Inngest integration AND Layer 1 cron
+
+**Layer 3: Manual Disaster Recovery SOP:**
+- If all automated paths fail (Inngest + Vercel + Railway):
+  1. Ops receives alert via external monitoring (e.g., Better Uptime, Checkly)
+  2. Run manual catch-up script locally or via Railway CLI
+  3. Script queries `scheduled_posts`, executes via Instagram API
+  4. Notify affected coaches: "Posts delayed due to infrastructure issue, now posted"
+- Document runbook in ops wiki
 
 - **Execution Flow:**
   1. Vercel cron checks `inngest_healthy` flag (set by health monitor)
@@ -585,7 +803,7 @@ Coaches with personal accounts can still get value:
   3. If unhealthy: Query due posts, execute directly, mark `timer_status: executed`
   4. Log all fallback executions for audit trail
 
-- **Critical:** This cron job shares NO dependencies with Inngest - different service, different execution path
+- **Critical:** Layer 2 shares NO dependencies with Vercel/Inngest - different cloud, different execution path
 
 **Recovery with catch-up logic (when Inngest returns):**
   1. On Inngest healthy, query `scheduled_posts` where `timer_status != executed` AND `desired_execution_at` has passed or is within 2hr
@@ -776,10 +994,129 @@ $$ LANGUAGE SQL;
 
 **Context Budget:** ~1,000 tokens for knowledge base items per request
 
-**Privacy:**
+**Privacy & PII Safeguards:**
 - Client PII never auto-posted without approval
 - Transformation photos require explicit consent
 - Files encrypted at rest, RLS enforced
+
+**Automatic PII Detection (RAG Injection Prevention):**
+Before including any knowledge base item in content generation context:
+1. **PII scan:** Run lightweight NER (Named Entity Recognition) on content
+   - Detect: Names, emails, phone numbers, addresses
+   - Use: spaCy or Claude with structured output
+2. **Auto-flag:** If PII detected → set `contains_client_pii = true`
+3. **Block from generative context:** Items with `contains_client_pii = true` excluded from auto-retrieval
+4. **Explicit opt-in required:** Coach must approve per-use when generating content mentioning clients
+5. **Audit log:** Track all PII inclusions in `consent_audit` table
+
+**Retrieval Pipeline with PII Filter:**
+```
+Query → Hybrid Search → Results
+                           │
+                    ┌──────┴──────┐
+                    ▼             ▼
+              PII-free items   PII-containing items
+              (auto-include)   (require explicit approval)
+                    │             │
+                    ▼             ▼
+              Context used    Coach asked: "Include Sarah's progress?"
+                              [Yes, include] [No, skip]
+```
+
+**PII Categories Detected:**
+| Category | Pattern | Action |
+|----------|---------|--------|
+| Client names | NER PERSON entities | Flag, require approval |
+| Emails | Regex + NER | Flag, never include by default |
+| Phone numbers | Regex | Flag, never include by default |
+| Specific results | "lost 20 lbs", "bench 225" | Flag if paired with name |
+
+### Reference Materials (Professional Resources)
+
+> Curated professional resources that enhance Juno's domain expertise. Unlike coach-uploaded knowledge base items, these are system-wide resources available to all coaches.
+
+**Purpose:**
+- Ground Juno's fitness programming in evidence-based practices
+- Provide authoritative citations for workout recommendations
+- Ensure exercise form cues and progression advice are accurate
+- Differentiate from generic AI assistants with domain expertise
+
+**Initial Resource: NSCA Strength & Conditioning Manual**
+- Industry-standard reference for exercise programming
+- Covers: periodization, exercise technique, program design, assessments
+- ~600 pages → chunked and embedded for RAG retrieval
+
+**RAG Pipeline:**
+```
+PDF Upload → Text Extraction → Chunking → Embedding → Storage
+                                 │
+                    ┌────────────┴────────────┐
+                    │                         │
+              Chunk Size: 500 tokens    Overlap: 50 tokens
+              (preserves context)       (prevents boundary cuts)
+                    │                         │
+                    └────────────┬────────────┘
+                                 ▼
+                    Store in reference_chunks table
+                    with source, page, section metadata
+```
+
+**Data Model:**
+```
+ReferenceSource
+├── id, name (e.g., "NSCA Essentials of Strength Training")
+├── type (textbook, certification, guideline)
+├── version, edition
+├── enabled (boolean - can disable outdated sources)
+└── created_at
+
+ReferenceChunk
+├── id, source_id (FK to ReferenceSource)
+├── content (TEXT - the chunk text)
+├── embedding (vector(1536))
+├── metadata (JSON - {page: 142, chapter: "Periodization", section: "Block Programming"})
+├── chunk_index (ordering within source)
+└── created_at
+```
+
+**Retrieval Integration:**
+When Juno generates fitness content (workout programs, exercise recommendations):
+1. Detect fitness-related intent (workout design, exercise selection, progression)
+2. Query `reference_chunks` with semantic search (top 3-5 relevant chunks)
+3. Include retrieved context in LLM prompt as "Reference Materials"
+4. Juno can cite sources: "Based on NSCA guidelines, a beginner should..."
+
+**Example Flow:**
+```
+Coach: "Create a 12-week strength program for a client new to lifting"
+
+Juno retrieves:
+- Chunk: "Novice lifters should begin with 2-3 sessions per week..."
+- Chunk: "Progressive overload for beginners: increase load 2.5-5% when..."
+- Chunk: "Compound movements (squat, deadlift, press) should form the foundation..."
+
+Juno generates program grounded in NSCA principles with optional citations.
+```
+
+**Scope Control (prevents hallucination):**
+- Reference materials supplement, don't replace coach expertise
+- Juno cites sources when making technical claims
+- If no relevant reference found, Juno uses general knowledge with caveat
+- Coach can override any recommendation (they know their client best)
+
+**Future Reference Sources (Post-MVP):**
+| Source | Domain | Priority |
+|--------|--------|----------|
+| ACSM Guidelines | General fitness, health | High |
+| NASM Corrective Exercise | Mobility, injury prevention | Medium |
+| Precision Nutrition | Nutrition coaching | Medium |
+| ACE Personal Trainer Manual | General PT knowledge | Low |
+| Specialty certifications | Sport-specific, populations | Future |
+
+**Implementation Timeline:**
+- **Post-MVP:** Initial NSCA manual processing and RAG integration
+- **V2:** Additional sources, citation UI in generated content
+- **V3:** Coach-uploadable professional resources (their own certifications)
 
 ### Integrations (MVP)
 | Service | Method | Purpose |
@@ -1066,6 +1403,18 @@ Testimonial (for content)
 - Compare with Stripe usage records
 - Log discrepancies > 1% to alerts channel
 
+**Cross-System Reconciliation (Instagram vs UsageEvents):**
+- Weekly job fetches actual Instagram posts via Media API (last 7 days per coach)
+- Compare `external_id` on Content records with Instagram Media IDs
+- Identify anomalies:
+  | Anomaly | Cause | Action |
+  |---------|-------|--------|
+  | UsageEvent without Instagram post | API call failed after logging | Flag as under-billed, investigate |
+  | Instagram post without UsageEvent | Bug: event not written | Create backfill UsageEvent, alert ops |
+  | Mismatch count >5% for coach | Systematic issue | Block billing, require manual review |
+- Store reconciliation results in `BillingReconciliation` table for audit
+- AI interactions: Cross-check with `conversation_messages` count (harder to reconcile, spot-check 10%)
+
 **Post-Window Dispute Workflow (after 1-hour grace period):**
 Real-world disputes happen after the undo window closes. Handle gracefully:
 
@@ -1183,10 +1532,57 @@ General AI assistants (ChatGPT, Claude)
 - Expired tokens: Disable automations, prompt re-auth
 - Revoked tokens: Detect via API error, disable and alert
 
+**Per-Job Token Error Handling:**
+Before executing any Instagram posting job:
+1. **Pre-flight token check:** Validate token expiry, attempt refresh if <24h remaining
+2. **If refresh fails:** Abort job, mark content as `status: token_error`, notify coach immediately
+3. **If API rejects mid-post:** Detect error code (190 = invalid token, 200 = permission issue)
+   - 190 (token invalid): Disable automations, alert: "Please reconnect your Instagram"
+   - 200 (permission revoked): Specific alert: "Instagram posting permission removed, please re-authorize"
+4. **Degrade gracefully:** Surface "Post Manually" button with copy-paste content
+5. **Retry logic:** Do NOT retry indefinitely; max 3 attempts within 15 minutes, then fail
+
+**Token Verification Before Scheduling:**
+When coach schedules post >24h out:
+- Check if token will expire before scheduled time
+- If yes: Warn coach "Your Instagram connection will expire before this posts. Please refresh now."
+- Block scheduling if token expires <6h before post time (high risk of failure)
+
 ### Data Handling
 - Coach owns their data
 - Clear data deletion workflow
 - No training on coach data without consent
+
+**GDPR/Data Deletion Cascade (Coach Account Deletion):**
+When a coach requests account deletion:
+
+| Data Type | Location | Deletion Method | Timeline |
+|-----------|----------|-----------------|----------|
+| Database records | Supabase (RLS tables) | `DELETE FROM coaches WHERE id = $1` (cascades via FK) | Immediate |
+| Uploaded files | Supabase Storage | Background job: iterate bucket by coach prefix, delete all | 24 hours |
+| Embeddings | pgvector tables | `DELETE FROM memory_entries WHERE coach_id = $1` | Immediate |
+| Redis cache | Redis | Pattern delete: `coach:{id}:*` | Immediate |
+| Reference chunks | ReferenceChunk table | Shared (system-wide), no coach data | N/A |
+| Conversation logs | conversation_messages | Cascade delete via FK | Immediate |
+| Stripe data | Stripe API | Cancel subscription, retain for legal (Stripe handles) | Per Stripe policy |
+
+**Deletion Workflow:**
+1. Coach clicks "Delete Account" in portal
+2. Confirm with password + "I understand this is permanent"
+3. Immediate: Soft-delete coach record (`deleted_at` timestamp)
+4. Immediate: Revoke all tokens, log out all sessions
+5. Background job (within 24h):
+   - Delete Supabase Storage files
+   - Delete embeddings (can be large, batch delete)
+   - Purge Redis caches
+   - Send confirmation email: "Your data has been deleted"
+6. 30-day retention for legal/support (soft delete)
+7. Hard delete after 30 days
+
+**Compliance Documentation:**
+- Log all deletion requests with timestamps
+- Store deletion confirmation for audit
+- Provide data export before deletion (GDPR right to portability)
 
 ### Multi-Tenancy & Data Isolation
 
@@ -1241,11 +1637,34 @@ Each coach can customize their agent:
 
 ## MVP Milestones (8 Weeks)
 
+**⚠️ RESOURCING ASSUMPTIONS:**
+| Resource | Assumption | If Different |
+|----------|------------|--------------|
+| Headcount | 1 full-time founder/engineer | Extend timeline 50% per 0.5 FTE reduction |
+| Weekly capacity | 50 focused hours/week | Adjust week estimates proportionally |
+| External blockers | WhatsApp/Canva approvals don't block | Built-in fallbacks (web chat, manual templates) |
+| Integration experience | Some prior Next.js/Supabase experience | Add 1 week ramp-up |
+
+**⚠️ CONTINGENCY BUFFERS:**
+- **Week 4 checkpoint:** If not at "chat + content generation + preview" → cut auto-posting from MVP
+- **Week 6 checkpoint:** If billing not started → defer Stripe to post-MVP (free tier only)
+- **External delays >2 weeks:** Pivot to web-only, manual-posting MVP
+
 **Timeline Reality Check:**
 This is an aggressive timeline for a solo founder. Priorities if behind schedule:
 1. **Must ship:** Chat + content generation + manual posting (copy-paste workflow)
 2. **Should ship:** Auto-posting + basic scheduling + moderation
 3. **Can defer to post-MVP:** Knowledge base uploads, analytics dashboard, memory consolidation, hybrid search refinement
+
+**Skill Framework Simplification:**
+- **MVP:** Implement 5 core skills directly (no generic skill engine):
+  - `generate_caption` - Claude generates Instagram caption
+  - `schedule_post` - Set time/date for content
+  - `send_message` - Send WhatsApp/web chat message
+  - `approve_content` - Mark content ready for posting
+  - `post_content` - Execute Instagram post
+- **Post-MVP:** If patterns emerge, generalize into skill framework
+- **Defer entirely:** Complex skill dependency graphs, undo semantics per skill
 
 **Critical Task Dependencies:**
 ```
@@ -1287,6 +1706,17 @@ Week 8: Hardening
 | WhatsApp Business API | Week 3-4 | Continue with web chat | Full feature parity in web chat |
 | Canva Connect | Week 4-5 | Launch without Canva | Manual template upload, add Canva post-launch |
 | Instagram Business | Coach-dependent | Degraded mode | Copy-paste workflow, posting reminders |
+
+**Approval Tracking (Assigned Owners):**
+| Approval | Owner | Check Cadence | Escalation |
+|----------|-------|---------------|------------|
+| WhatsApp Business API | Founder | Weekly (every Monday) | If no response by Week 3, escalate to Meta support |
+| Canva Connect | Founder | Weekly | If no response by Week 4, plan launch without |
+| Instagram Business | N/A (coach-driven) | On onboarding | Provide conversion guide in onboarding flow |
+
+**Communication Plan if Approvals Delayed:**
+- Week 4 checkpoint: If WhatsApp not approved, communicate to beta coaches: "Launching with web chat first, WhatsApp coming soon"
+- Document all approval requests with timestamps for audit
 
 **De-risking strategy:**
 - Week 1-4: Build end-to-end slice (chat → content → manual post)
@@ -1678,6 +2108,28 @@ interface Skill {
 ### 10. FITNESS COACHING SKILLS (Domain-Specific)
 
 > These skills differentiate Juno for fitness/wellness coaches specifically. They leverage coach expertise while automating delivery.
+
+**⚠️ REGULATORY DISCLAIMERS (Required in Generated Content):**
+
+| Category | Required Disclaimer | When Applied |
+|----------|---------------------|--------------|
+| Workout Programming | "Consult a physician before starting any exercise program." | All workout outputs |
+| Nutrition | "For educational purposes only. Consult a registered dietitian for medical nutrition therapy." | All meal plans, macro calculations |
+| Progress/Body Composition | "Body composition estimates are approximations. For accurate assessment, consult a professional." | Body fat %, measurements |
+| Supplements | "This is not medical advice. Consult a healthcare provider before taking supplements." | Any supplement mentions |
+| Injury/Recovery | "This is general guidance, not medical advice. Consult a healthcare provider for injuries." | Mobility, injury-related content |
+| Mental Health | "If you're struggling, please reach out to a mental health professional." | Mindset content mentioning struggles |
+
+**Disclaimer Implementation:**
+1. Each skill category has `required_disclaimer` field in skill metadata
+2. LLM prompts include: "Append the following disclaimer: {disclaimer}"
+3. Content moderation verifies disclaimer present before marking Green tier
+4. Missing disclaimer → Yellow tier, coach prompted to add
+
+**Testing Requirements:**
+- Unit tests verify each skill output includes required disclaimer
+- Sample generated content reviewed monthly for compliance
+- Coach feedback mechanism: "Is this disclaimer correct for your practice?"
 
 #### Workout Programming
 | Skill | Description | Risk | MVP | Integration |
