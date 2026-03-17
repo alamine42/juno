@@ -322,6 +322,39 @@ Coach.auto_post_enabled_reason VARCHAR -- 'whatsapp_connected', 'pwa_push_verifi
 | PWA push permission revoked | Set `can_auto_post = false` |
 | Coach manually disables | Set `can_auto_post = false` |
 
+**⚠️ State Transition When `can_auto_post` Flips:**
+
+When `can_auto_post` changes from FALSE → TRUE:
+```
+on_auto_post_enabled(coach_id):
+  1. Query pending reminders for this coach:
+     SELECT * FROM reminders WHERE coach_id = $1 AND status = 'pending'
+
+  2. For each pending reminder:
+     - Cancel reminder: UPDATE reminders SET status = 'cancelled'
+     - Convert to scheduled post:
+       - Create scheduled_posts entry with remind_at as desired_execution_at
+       - Update Content.status = 'scheduled' (was 'reminder_set')
+       - Create Inngest timer if within 2-hour window
+
+  3. Notify coach: "Auto-posting enabled! X pending reminders converted to scheduled posts."
+```
+
+When `can_auto_post` changes from TRUE → FALSE:
+```
+on_auto_post_disabled(coach_id):
+  1. Query scheduled posts for this coach:
+     SELECT * FROM scheduled_posts WHERE coach_id = $1 AND timer_status = 'pending'
+
+  2. For each scheduled post:
+     - Convert to reminder:
+       - Create reminder with remind_at = desired_execution_at - 15 min
+       - Update Content.status = 'reminder_set' (was 'scheduled')
+     - Existing Inngest timer becomes stale (will no-op due to version check)
+
+  3. Notify coach: "Auto-posting disabled. X scheduled posts converted to reminders."
+```
+
 **Reminder Infrastructure (for degraded mode):**
 When `can_auto_post = false`, Juno creates reminders instead of posting timers.
 
@@ -361,12 +394,21 @@ CREATE INDEX idx_reminders_pending ON reminders (remind_at) WHERE status = 'pend
 2. **Delivery (background job, every 1 min):**
    ```
    reminder-sender job:
-     1. Query: SELECT * FROM reminders WHERE status = 'pending' AND remind_at <= NOW()
+     1. Query: SELECT r.*, c.* FROM reminders r
+        JOIN content c ON r.content_id = c.id
+        WHERE r.status = 'pending' AND r.remind_at <= NOW()
      2. For each reminder:
-        - Send via channel (email with "Time to post!" + content preview + copy button)
+        ⚠️ MODERATION CHECK BEFORE SEND (same as auto-post path):
+        - Re-run moderation on content (may have changed since approval)
+        - If GREEN: Send reminder email with content preview + copy button
+        - If YELLOW: Include warning banner in email: "⚠️ Review before posting: [reason]"
+        - If RED: DO NOT send copy button, instead: "This content was blocked: [reason]"
         - Update status = 'sent', sent_at = NOW()
         - If send fails: status = 'failed', failure_reason = error
    ```
+
+   **⚠️ CRITICAL: Reminder emails MUST include moderation classification.**
+   Unmoderated content in email = compliance violation.
 
 3. **Action tracking:**
    - Email includes: "I posted it" button → updates `actioned_at`, Content.status = 'posted_manually'
@@ -381,6 +423,33 @@ CREATE INDEX idx_reminders_pending ON reminders (remind_at) WHERE status = 'pend
    | actioned | posted_manually | Archive content |
    | dismissed | draft | Return to drafts |
    | failed | reminder_set | Retry or alert |
+   | **expired** | **missed** | Show in "Missed Posts" dashboard |
+
+5. **Timeout + Escalation (unconfirmed reminders):**
+   ```
+   reminder-expiry job (runs hourly):
+     1. Query: SELECT * FROM reminders
+        WHERE status = 'sent'
+          AND sent_at < NOW() - interval '24 hours'
+     2. For each expired reminder:
+        - Update reminder.status = 'expired'
+        - Update Content.status = 'missed'
+        - Log: "Reminder for post {id} expired without confirmation"
+     3. Dashboard shows "Missed Posts" with options:
+        - [Reschedule] - Create new reminder
+        - [Mark as Posted] - Coach confirms they posted manually
+        - [Discard] - Move to drafts
+   ```
+
+   **Follow-up email (12h after first reminder, if no action):**
+   ```
+   Subject: Reminder: Your post is still waiting
+
+   You scheduled a post for [time] but haven't confirmed posting it.
+   [COPY TO CLIPBOARD] | [I POSTED IT] | [SKIP]
+
+   This reminder expires in 12 hours.
+   ```
 
 **Email Template (MVP):**
 ```
@@ -390,14 +459,27 @@ Hey [Coach name],
 
 Your scheduled post is ready to go live!
 
+⚠️ [MODERATION WARNING if Yellow: "Review before posting: [reason]"]
+🚫 [BLOCKED if Red: "This content was blocked: [reason]" - no copy button]
+
 [Content preview - first 280 chars]
 
-[COPY TO CLIPBOARD] button
+[COPY TO CLIPBOARD] button (hidden if Red)
 [OPEN INSTAGRAM] button
 
 ---
 [I POSTED IT] | [SKIP THIS ONE] | [RESCHEDULE]
+
+---
+Juno - AI Chief of Staff for Coaches
+[Unsubscribe from reminders] | [Manage notification preferences]
 ```
+
+**⚠️ CAN-SPAM Compliance (required for MVP):**
+- Every email MUST include unsubscribe link
+- Unsubscribe processed within 24 hours (instantly for MVP)
+- Physical mailing address in footer (or "Juno, [City, State]")
+- No misleading subject lines
 
 **Technical Implementation:**
 - **Supabase Realtime** for real-time messaging (Vercel serverless can't hold WebSockets)
@@ -2126,62 +2208,34 @@ This is an aggressive timeline for a solo founder. Priorities if behind schedule
 - **Post-MVP:** If patterns emerge, generalize into skill framework
 - **Defer entirely:** Complex skill dependency graphs, undo semantics per skill
 
-**Critical Task Dependencies:**
+**TRUE MVP Task Dependencies (4 weeks only):**
 ```
 Week 1: Foundation
-  └── Auth, DB, Inngest setup
-  └── START: WhatsApp + Canva approvals (external, non-blocking)
+  └── Next.js + Supabase + Auth (magic link)
+  └── NO Inngest, NO OAuth, NO external APIs
 
-Week 2: Web Portal
+Week 2: Web Chat
   ├── depends on: Week 1 (auth, DB)
-  └── OAuth flows, token management
+  └── Supabase Realtime chat, basic portal UI
 
-Week 3: Background Jobs + Search
-  ├── depends on: Week 1 (Inngest), Week 2 (tokens)
-  └── pgvector, scheduling, realtime
+Week 3: Content Generation
+  ├── depends on: Week 2 (chat)
+  └── Claude integration, 5 hardcoded skills
+  └── GATE: Can generate caption via chat
 
-Week 4: Content Generation
-  ├── depends on: Week 3 (pgvector, scheduling)
-  └── GATE: Content generation working end-to-end
-
-Week 5: Chat Integration
-  ├── depends on: Week 3 (realtime), Week 4 (content gen)
-  └── CONTINGENCY: If WhatsApp not approved, use web chat only
-
-Week 6: Instagram Posting
-  ├── depends on: Week 4 (content), Week 3 (scheduling)
-  └── GATE: Can auto-post to Instagram
-
-Week 7: Billing
-  ├── depends on: Week 6 (posting = billable events)
-  └── Can defer usage metering if needed (flat rate MVP)
-
-Week 8: Hardening
-  └── depends on: All previous weeks
+Week 4: Moderation + Launch
+  ├── depends on: Week 3 (content gen)
+  └── Basic moderation, email reminders
+  └── GATE: End-to-end flow working
+  └── FREE BETA LAUNCH
 ```
 
-**External Approval Contingencies:**
-| Approval | Expected | If Delayed | Mitigation |
-|----------|----------|------------|------------|
-| WhatsApp Business API | Week 3-4 | Continue with web chat | Full feature parity in web chat |
-| Canva Connect | Week 4-5 | Launch without Canva | Manual template upload, add Canva post-launch |
-| Instagram Business | Coach-dependent | Degraded mode | Copy-paste workflow, posting reminders |
-
-**Approval Tracking (Assigned Owners):**
-| Approval | Owner | Check Cadence | Escalation |
-|----------|-------|---------------|------------|
-| WhatsApp Business API | Founder | Weekly (every Monday) | If no response by Week 3, escalate to Meta support |
-| Canva Connect | Founder | Weekly | If no response by Week 4, plan launch without |
-| Instagram Business | N/A (coach-driven) | On onboarding | Provide conversion guide in onboarding flow |
-
-**Communication Plan if Approvals Delayed:**
-- Week 4 checkpoint: If WhatsApp not approved, communicate to beta coaches: "Launching with web chat first, WhatsApp coming soon"
-- Document all approval requests with timestamps for audit
-
-**De-risking strategy:**
-- Week 1-4: Build end-to-end slice (chat → content → manual post)
-- Week 5-6: Add automation layer (scheduling, auto-post)
-- Week 7-8: Hardening + billing (defer analytics if needed)
+**Post-MVP External Approvals (NOT in MVP scope):**
+| Approval | Phase | Action |
+|----------|-------|--------|
+| WhatsApp Business API | Phase 2 | Apply after beta validation |
+| Canva Connect | Phase 3 | Apply after beta validation |
+| Instagram Graph API | Phase 2 | Apply after beta validation |
 
 **⚠️ TRUE MINIMUM MVP - COMMIT TO THIS SCOPE:**
 
@@ -2249,10 +2303,17 @@ The 8-week timeline with 63+ skills is not realistic for a solo founder. **Commi
 - [ ] Yellow content → coach approval required
 - [ ] Red content → blocked with explanation
 - [ ] Simple email notifications (reminders, alerts)
+- [ ] **Email unsubscribe link** (CAN-SPAM compliance)
 - [ ] End-to-end testing of core flow
 - [ ] Security review (auth, RLS)
 - [ ] **FREE BETA LAUNCH with 5-10 coaches**
-- [ ] Basic monitoring (Supabase dashboard, error tracking)
+- [ ] **Minimal observability stack (required for MVP):**
+  - [ ] Error tracking (Sentry or Supabase logs)
+  - [ ] Health check endpoint (`/api/health`)
+  - [ ] Uptime monitoring (UptimeRobot, free tier)
+  - [ ] Founder email alerts on: auth failures, moderation errors, email send failures
+  - [ ] Portal banner for system issues: "Juno is experiencing issues, we're on it"
+  - [ ] Manual SOP: Check error logs daily during beta
 
 ---
 
