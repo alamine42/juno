@@ -42,3 +42,6 @@ next-env.d.ts
 
 # Supabase
 supabase/.temp/
+
+# Handover docs (session-specific)
+HANDOVER.md
