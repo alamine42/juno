@@ -408,9 +408,21 @@ CREATE INDEX idx_reminders_pending ON reminders (remind_at) WHERE status = 'pend
 
 **Reminder Lifecycle:**
 1. **Creation:** When coach approves content with `can_auto_post = false`
-   - Create `Reminder` row with `remind_at` = scheduled time - 15 min
+   ⚠️ ALWAYS create scheduled_posts row for single source of truth:
+   - Create `scheduled_posts` row with:
+     - `timer_status = 'manual_required'` (not 'pending')
+     - `desired_execution_at` = scheduled time
+     - Canonical timezone info preserved
+   - Create `Reminder` row with:
+     - `remind_at` = scheduled time - 15 min
+     - `scheduled_post_id` = FK to the scheduled_posts row
    - Set `channel = 'email'` (MVP), later: 'push' or 'sms' based on preferences
-   - Content.status = 'reminder_set' (not 'scheduled')
+   - Content.status = 'reminder_set'
+
+   This ensures:
+   - DST monitor can still adjust times for manual posts
+   - `on_auto_post_enabled` can find and update the row
+   - Usage reporting has complete scheduling data
 
 2. **Delivery (background job, every 1 min):**
    ```
@@ -497,7 +509,21 @@ Juno - AI Chief of Staff for Coaches
 ```
 
 **⚠️ CAN-SPAM Compliance (required for MVP):**
-- Every email MUST include unsubscribe link
+
+**Transactional vs. Marketing Email Separation:**
+| Email Type | Examples | Unsubscribe | Legal Basis |
+|------------|----------|-------------|-------------|
+| **Transactional** | Posting reminders, moderation alerts, token expiry | NO unsubscribe (required for service) | Contract performance |
+| **Marketing** | Tips, feature announcements, upsells | YES unsubscribe required | Consent |
+
+- **Transactional emails are REQUIRED for service delivery** - cannot be unsubscribed
+- Coaches must have at least ONE active channel (email, WhatsApp, or verified push) for transactional alerts
+- If coach tries to unsubscribe from ALL channels:
+  - Block action: "At least one notification channel required for posting reminders"
+  - Or: Enable auto-posting to eliminate need for reminders
+
+**Marketing emails:**
+- Every marketing email MUST include unsubscribe link
 - Unsubscribe processed within 24 hours (instantly for MVP)
 - Physical mailing address in footer (or "Juno, [City, State]")
 - No misleading subject lines
@@ -1202,13 +1228,34 @@ async function claimAndExecutePost(
 **Layer 1: Vercel Cron (same-infra fallback):**
 - Separate Vercel cron job (every 5 min) that does NOT depend on Inngest
 - Queries `scheduled_posts WHERE timer_status = 'pending' AND desired_execution_at <= now()`
-- Calls `claimAndExecutePost()` for each - SAME function as Inngest handler
+- **⚠️ RESILIENT EXECUTION:** Fallback must handle timing/version drift:
+  ```typescript
+  // Fallback cron - fetch current values and use them (not stale snapshots)
+  const posts = await db.query(`
+    SELECT id, schedule_version, desired_execution_at
+    FROM scheduled_posts
+    WHERE timer_status = 'pending'
+      AND desired_execution_at <= NOW()
+  `);
+
+  for (const post of posts) {
+    // Use CURRENT values from the query, not cached/stale values
+    const success = await claimAndExecutePost(
+      post.id,
+      post.schedule_version,   // Current version
+      post.desired_execution_at // Current time
+    );
+    // If claim fails (version/time changed), the row was rescheduled
+    // - this is correct behavior, not an error
+    // - the new Inngest timer will handle it
+  }
+  ```
 - Only activates when Inngest health check fails (checked via environment flag)
 
 **Layer 2: External Worker (different-infra fallback - PHASE 2, when auto-posting enabled):**
 - **Railway cron job** running outside Vercel entirely
 - Same logic as Layer 1, but on independent infrastructure
-- Queries Supabase directly, calls `claimAndExecutePost()` - SAME function
+- Uses same resilient execution pattern (fetch current, pass to claim)
 - Runs continuously (every 5 min), checks both Inngest AND Vercel health
 - If either unhealthy: Execute due posts directly
 - **Cost:** ~$5/month on Railway for minimal always-on worker
