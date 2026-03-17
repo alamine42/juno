@@ -328,15 +328,21 @@ When `can_auto_post` changes from FALSE → TRUE:
 ```
 on_auto_post_enabled(coach_id):
   1. Query pending reminders for this coach:
-     SELECT * FROM reminders WHERE coach_id = $1 AND status = 'pending'
+     SELECT r.*, r.original_desired_execution_at, sp.id as scheduled_post_id
+     FROM reminders r
+     JOIN scheduled_posts sp ON r.content_id = sp.content_id
+     WHERE r.coach_id = $1 AND r.status = 'pending'
 
   2. For each pending reminder:
      - Cancel reminder: UPDATE reminders SET status = 'cancelled'
-     - Convert to scheduled post:
-       ⚠️ Use ORIGINAL post time, NOT remind_at:
-       - Create scheduled_posts entry with original_desired_execution_at as desired_execution_at
-       - Update Content.status = 'scheduled' (was 'reminder_set')
-       - Create Inngest timer if within 2-hour window
+     - ⚠️ UPDATE existing scheduled_posts row (not CREATE - would violate UNIQUE):
+       UPDATE scheduled_posts SET
+         timer_status = 'pending',
+         desired_execution_at = r.original_desired_execution_at,
+         schedule_version = schedule_version + 1
+       WHERE id = sp.scheduled_post_id
+     - Update Content.status = 'scheduled' (was 'reminder_set')
+     - Create Inngest timer if within 2-hour window
 
   3. Notify coach: "Auto-posting enabled! X pending reminders converted to scheduled posts."
 ```
@@ -1121,11 +1127,19 @@ ALL execution paths (Inngest, Vercel cron, Railway, reconciliation) MUST use the
 
 ```typescript
 // lib/posting/claim-and-execute.ts - SINGLE SOURCE OF TRUTH
-async function claimAndExecutePost(postId: string, expectedVersion?: number): Promise<boolean> {
+// ⚠️ ALL parameters are REQUIRED - stale timer guards
+async function claimAndExecutePost(
+  postId: string,
+  expectedVersion: number,  // REQUIRED - prevents stale timer execution
+  expectedTime: Date        // REQUIRED - prevents wrong-time execution
+): Promise<boolean> {
   const executionId = crypto.randomUUID();
 
-  // ⚠️ CRITICAL: Check can_auto_post INSIDE this function (not in caller)
-  // This ensures ALL execution paths (Inngest, Vercel cron, Railway) enforce the guard
+  // ⚠️ CRITICAL: Enforce ALL guards in SQL:
+  // 1. timer_status = 'pending' (not already executed)
+  // 2. schedule_version matches (not rescheduled)
+  // 3. desired_execution_at matches (not DST-adjusted)
+  // 4. can_auto_post = true (coach hasn't disabled auto-posting)
   const claimed = await db.query(`
     UPDATE scheduled_posts sp
     SET timer_status = 'executing', execution_id = $2, claimed_at = NOW()
@@ -1133,24 +1147,31 @@ async function claimAndExecutePost(postId: string, expectedVersion?: number): Pr
     WHERE sp.id = $1
       AND sp.coach_id = c.id
       AND sp.timer_status = 'pending'
-      AND ($3::int IS NULL OR sp.schedule_version = $3)
-      AND c.can_auto_post = true  -- ⚠️ GUARD: Only execute if coach has auto-post enabled
+      AND sp.schedule_version = $3          -- ⚠️ REQUIRED: version must match
+      AND sp.desired_execution_at = $4       -- ⚠️ REQUIRED: time must match
+      AND c.can_auto_post = true             -- ⚠️ GUARD: coach has auto-post enabled
     RETURNING sp.*, c.can_auto_post
-  `, [postId, executionId, expectedVersion ?? null]);
+  `, [postId, executionId, expectedVersion, expectedTime]);
 
   if (claimed.rows.length === 0) {
-    // Check WHY we failed - was it can_auto_post = false?
+    // Check WHY we failed to claim
     const post = await db.query(`
       SELECT sp.*, c.can_auto_post FROM scheduled_posts sp
       JOIN coaches c ON sp.coach_id = c.id WHERE sp.id = $1
     `, [postId]);
 
-    if (post.rows[0] && !post.rows[0].can_auto_post) {
-      // Coach has auto-post disabled - convert to reminder, don't post
+    if (!post.rows[0]) return false; // Doesn't exist
+
+    // Log reason for failure (helps debugging)
+    if (post.rows[0].schedule_version !== expectedVersion) {
+      console.log(`Stale timer: version ${expectedVersion} != ${post.rows[0].schedule_version}`);
+    } else if (post.rows[0].desired_execution_at.getTime() !== expectedTime.getTime()) {
+      console.log(`Stale timer: time rescheduled`);
+    } else if (!post.rows[0].can_auto_post) {
+      console.log('Coach has auto-post disabled, converting to reminder');
       await convertToReminder(postId, post.rows[0].desired_execution_at);
-      return false;
     }
-    return false; // Already claimed, version mismatch, or doesn't exist
+    return false;
   }
 
   try {
@@ -2108,20 +2129,41 @@ Before deletion, coach can request full data export:
 ### Multi-Tenancy & Data Isolation
 
 **Row-Level Security (RLS):**
+
+**⚠️ CRITICAL: Coach ID ≠ Auth User ID**
+Supabase auth generates its own UUIDs for `auth.users`. The `coaches` table must
+explicitly map to auth users via an `auth_user_id` column:
+
+```sql
+-- Coaches table must include auth mapping
+ALTER TABLE coaches ADD COLUMN auth_user_id UUID REFERENCES auth.users(id);
+CREATE UNIQUE INDEX idx_coaches_auth_user ON coaches(auth_user_id);
+-- Populate at signup: INSERT INTO coaches (auth_user_id, ...) VALUES (auth.uid(), ...)
+```
+
 Every table enforces tenant isolation at database level:
 ```sql
--- ⚠️ CRITICAL: All RLS policies must include deleted_at check
+-- ⚠️ CRITICAL: All RLS policies use auth_user_id mapping, NOT direct coach_id = auth.uid()
 CREATE POLICY "coach_isolation" ON content FOR ALL USING (
-  coach_id = auth.uid()
-  AND (SELECT deleted_at FROM coaches WHERE id = auth.uid()) IS NULL
+  coach_id IN (
+    SELECT id FROM coaches
+    WHERE auth_user_id = auth.uid()
+      AND deleted_at IS NULL
+  )
 );
 CREATE POLICY "coach_isolation" ON conversations FOR ALL USING (
-  coach_id = auth.uid()
-  AND (SELECT deleted_at FROM coaches WHERE id = auth.uid()) IS NULL
+  coach_id IN (
+    SELECT id FROM coaches
+    WHERE auth_user_id = auth.uid()
+      AND deleted_at IS NULL
+  )
 );
 CREATE POLICY "coach_isolation" ON knowledge_items FOR ALL USING (
-  coach_id = auth.uid()
-  AND (SELECT deleted_at FROM coaches WHERE id = auth.uid()) IS NULL
+  coach_id IN (
+    SELECT id FROM coaches
+    WHERE auth_user_id = auth.uid()
+      AND deleted_at IS NULL
+  )
 );
 -- Applied to ALL coach-scoped tables
 ```
