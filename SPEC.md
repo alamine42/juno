@@ -28,7 +28,7 @@ Create space and time for coaches to do what they do best—coach—by automatin
 | Personality | Encouraging business partner |
 | Success Metric | 30-day retention |
 | Timeline | **4 weeks to TRUE MVP** (free beta) |
-| **Background Jobs** | **None (MVP)** → Inngest (post-MVP) |
+| **Background Jobs** | **Vercel cron only (MVP)** → Inngest (post-MVP) |
 
 ---
 
@@ -333,7 +333,8 @@ on_auto_post_enabled(coach_id):
   2. For each pending reminder:
      - Cancel reminder: UPDATE reminders SET status = 'cancelled'
      - Convert to scheduled post:
-       - Create scheduled_posts entry with remind_at as desired_execution_at
+       ⚠️ Use ORIGINAL post time, NOT remind_at:
+       - Create scheduled_posts entry with original_desired_execution_at as desired_execution_at
        - Update Content.status = 'scheduled' (was 'reminder_set')
        - Create Inngest timer if within 2-hour window
 
@@ -343,16 +344,30 @@ on_auto_post_enabled(coach_id):
 When `can_auto_post` changes from TRUE → FALSE:
 ```
 on_auto_post_disabled(coach_id):
+  BEGIN TRANSACTION:  -- ⚠️ ATOMIC: All changes in single transaction
+
   1. Query scheduled posts for this coach:
      SELECT * FROM scheduled_posts WHERE coach_id = $1 AND timer_status = 'pending'
+     FOR UPDATE  -- Lock rows to prevent race with execution
 
   2. For each scheduled post:
+     - Increment schedule_version (invalidates any in-flight timers)
+     - Update timer_status = 'cancelled'
      - Convert to reminder:
-       - Create reminder with remind_at = desired_execution_at - 15 min
+       - Create reminder with:
+         - remind_at = desired_execution_at - 15 min
+         - original_desired_execution_at = desired_execution_at  -- ⚠️ PRESERVE original time
        - Update Content.status = 'reminder_set' (was 'scheduled')
-     - Existing Inngest timer becomes stale (will no-op due to version check)
+
+  COMMIT;
 
   3. Notify coach: "Auto-posting disabled. X scheduled posts converted to reminders."
+```
+
+**⚠️ Reminder Table Must Store Original Post Time:**
+```sql
+ALTER TABLE reminders ADD COLUMN original_desired_execution_at TIMESTAMP WITH TIME ZONE;
+-- When converting back to scheduled_post, use this, NOT remind_at
 ```
 
 **Reminder Infrastructure (for degraded mode):**
@@ -1109,18 +1124,33 @@ ALL execution paths (Inngest, Vercel cron, Railway, reconciliation) MUST use the
 async function claimAndExecutePost(postId: string, expectedVersion?: number): Promise<boolean> {
   const executionId = crypto.randomUUID();
 
-  // Atomic claim with SKIP LOCKED (prevents double-execution)
+  // ⚠️ CRITICAL: Check can_auto_post INSIDE this function (not in caller)
+  // This ensures ALL execution paths (Inngest, Vercel cron, Railway) enforce the guard
   const claimed = await db.query(`
-    UPDATE scheduled_posts
+    UPDATE scheduled_posts sp
     SET timer_status = 'executing', execution_id = $2, claimed_at = NOW()
-    WHERE id = $1
-      AND timer_status = 'pending'
-      AND ($3::int IS NULL OR schedule_version = $3)
-    RETURNING *
+    FROM coaches c
+    WHERE sp.id = $1
+      AND sp.coach_id = c.id
+      AND sp.timer_status = 'pending'
+      AND ($3::int IS NULL OR sp.schedule_version = $3)
+      AND c.can_auto_post = true  -- ⚠️ GUARD: Only execute if coach has auto-post enabled
+    RETURNING sp.*, c.can_auto_post
   `, [postId, executionId, expectedVersion ?? null]);
 
   if (claimed.rows.length === 0) {
-    return false; // Already claimed or version mismatch
+    // Check WHY we failed - was it can_auto_post = false?
+    const post = await db.query(`
+      SELECT sp.*, c.can_auto_post FROM scheduled_posts sp
+      JOIN coaches c ON sp.coach_id = c.id WHERE sp.id = $1
+    `, [postId]);
+
+    if (post.rows[0] && !post.rows[0].can_auto_post) {
+      // Coach has auto-post disabled - convert to reminder, don't post
+      await convertToReminder(postId, post.rows[0].desired_execution_at);
+      return false;
+    }
+    return false; // Already claimed, version mismatch, or doesn't exist
   }
 
   try {
@@ -1131,7 +1161,6 @@ async function claimAndExecutePost(postId: string, expectedVersion?: number): Pr
       WHERE id = $1 AND execution_id = $2
     `, [postId, executionId]);
 
-    // Emit billing event with execution_id for idempotency
     await recordUsageEvent({
       type: 'post_published',
       coachId: claimed.rows[0].coach_id,
@@ -1155,14 +1184,14 @@ async function claimAndExecutePost(postId: string, expectedVersion?: number): Pr
 - Calls `claimAndExecutePost()` for each - SAME function as Inngest handler
 - Only activates when Inngest health check fails (checked via environment flag)
 
-**Layer 2: External Worker (different-infra fallback - MVP REQUIRED):**
+**Layer 2: External Worker (different-infra fallback - PHASE 2, when auto-posting enabled):**
 - **Railway cron job** running outside Vercel entirely
 - Same logic as Layer 1, but on independent infrastructure
 - Queries Supabase directly, calls `claimAndExecutePost()` - SAME function
 - Runs continuously (every 5 min), checks both Inngest AND Vercel health
 - If either unhealthy: Execute due posts directly
 - **Cost:** ~$5/month on Railway for minimal always-on worker
-- **Why MVP required:** Cannot claim "autonomous posting" without redundancy
+- **When needed:** Required when claiming "autonomous posting" - add in Phase 2
 
 **Layer 3: Manual Disaster Recovery SOP:**
 - If all automated paths fail (Inngest + Vercel + Railway):
@@ -2212,7 +2241,8 @@ This is an aggressive timeline for a solo founder. Priorities if behind schedule
 ```
 Week 1: Foundation
   └── Next.js + Supabase + Auth (magic link)
-  └── NO Inngest, NO OAuth, NO external APIs
+  └── Vercel cron for reminders (1 job: send pending emails)
+  └── NO Inngest, NO OAuth, NO external APIs beyond Supabase
 
 Week 2: Web Chat
   ├── depends on: Week 1 (auth, DB)
