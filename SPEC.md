@@ -268,13 +268,20 @@ If WhatsApp Business API approval is delayed, the web portal includes a native c
 **⚠️ AUTONOMY DOWNGRADE (Web Chat Only Mode):**
 When WhatsApp is unavailable and coach is using web chat only, reduce autonomy to prevent missed critical alerts:
 
-| Feature | With WhatsApp | Web Chat Only |
-|---------|---------------|---------------|
+| Feature | With WhatsApp | Web Chat Only (MVP) |
+|---------|---------------|---------------------|
 | Auto-posting | Enabled (Green tier) | **Disabled** - require explicit portal approval |
 | Proactive nudges | Sent immediately | **Paused** - batch into daily email digest |
-| Critical alerts (token expiry, moderation) | WhatsApp + email | **SMS + email** (must collect phone) |
+| Critical alerts (token expiry, moderation) | WhatsApp + email | **Email only** (SMS post-MVP) |
 | Time-sensitive approvals | WhatsApp quick reply | **Email with 1-click approve link** |
 | Silence handling | 72h threshold | **Disabled** - no auto-pause |
+
+**⚠️ MVP ALERT CHANNEL: EMAIL ONLY**
+SMS is NOT enabled for MVP. Critical alerts use email with:
+- Subject: "🚨 Juno needs your attention: [issue type]"
+- One-click action links in email body
+- 15-minute retry if no action taken
+- Escalation to portal banner on next login
 
 **Why downgrade autonomy:**
 - Web chat cannot guarantee delivery to locked phone
@@ -484,8 +491,11 @@ Message received → Check (conversation_id, client_id, client_seq)
 - If browser push denied: Offer email notification opt-in for urgent messages
 - Email fallback: "Juno needs your attention" with deep link to web chat
 
-**SMS Fallback (TCPA Compliance Required):**
-SMS is used for critical alerts when web chat only. TCPA compliance is mandatory:
+**SMS Fallback (POST-MVP - TCPA Compliance Required):**
+
+> **⚠️ SMS IS DISABLED FOR TRUE MINIMUM MVP.** Use email-only alerts until full consent stack ships.
+
+SMS will be used for critical alerts when web chat only. TCPA compliance is mandatory:
 
 **Consent Capture (during onboarding if web chat only):**
 ```
@@ -1113,6 +1123,39 @@ timer-reconciliation job (runs every 15 min, regardless of health):
      - If can_auto_post: Execute directly, mark executed
      - If not can_auto_post: Create reminder, notify coach
 ```
+
+**⚠️ Daily Full-Table Reconciliation (catches multi-hour outages):**
+The 2-hour sweep window has a blind spot: if there's a multi-hour outage (DB down, bad deploy), posts scheduled >2 hours out never receive timers. Add daily scan:
+
+```
+daily-reconciliation job (runs every 6 hours at 00:00, 06:00, 12:00, 18:00 UTC):
+  1. Query: SELECT * FROM scheduled_posts
+     WHERE timer_status = 'pending'
+       AND desired_execution_at > now()  -- ALL future posts, not just 2hr window
+       AND inngest_event_id IS NULL      -- No timer ever created
+       AND created_at < now() - interval '1 hour'  -- Should have timer by now
+
+  2. For each orphaned post:
+     - If desired_execution_at > now() + 2 hours:
+       - Log warning: "Post {id} scheduled for {time} has no timer queued"
+       - Alert ops (Slack/email): "Potential timer creation failure"
+       - Do NOT create timer yet (let normal sweep handle when in window)
+     - If desired_execution_at <= now() + 2 hours:
+       - Create Inngest timer immediately
+       - Update inngest_event_id
+
+  3. Report summary:
+     - Total future posts: X
+     - Posts with timers: Y
+     - Orphaned posts: Z (with breakdown by time range)
+     - If orphaned > 0: Alert escalation
+```
+
+This catches:
+- Multi-hour infrastructure outages
+- Silent timer creation failures
+- Database disconnects that prevent sweep from running
+- Posts approved during deployment rollbacks
 
 This catches:
 - Approval handler crashes before `inngest.send`
@@ -2951,12 +2994,24 @@ const canva = {
 
 ---
 
-### MVP Skill Summary
+### Full Product Skill Roadmap (POST-MVP ONLY)
 
-**Total Skills: ~172** (including 62 fitness-specific skills)
+> **⚠️ THIS IS NOT THE TRUE MINIMUM MVP.**
+>
+> **TRUE MVP = 5 hardcoded skills ONLY:**
+> 1. `generate_caption` - Claude generates Instagram caption
+> 2. `edit_caption` - Refine based on coach feedback
+> 3. `save_draft` - Store content for later
+> 4. `schedule_reminder` - Set email reminder to post manually
+> 5. `send_chat_message` - Juno responds in chat
+>
+> **TRUE MVP Integrations = NONE.** No Instagram API, no Calendar, no Stripe, no WhatsApp.
+> Everything below ships AFTER beta validation with 10+ coaches.
 
-| Category | MVP Skills | Post-MVP | Future |
-|----------|-----------|----------|--------|
+**Full Product Vision: ~172 skills** (Post-MVP phases)
+
+| Category | Phase 2 | Phase 3 | Phase 4 |
+|----------|---------|---------|---------|
 | Strategy | 3 | 6 | 3 |
 | Marketing - Content | 12 | 5 | 0 |
 | Marketing - SEO | 2 | 3 | 2 |
@@ -2976,15 +3031,15 @@ const canva = {
 | **Fitness - Assessments** | 4 | 5 | 0 |
 | **Fitness - Motivation** | 5 | 3 | 2 |
 | **Fitness - Content** | 5 | 5 | 0 |
-| **Total** | **63** | **107** | **21** |
+| **Total (Post-MVP)** | **63** | **107** | **21** |
 
-**MVP Integrations Required:**
+**Phase 2 Integrations (after beta validation):**
 - Instagram Graph API (Business/Creator accounts)
 - Google Calendar
 - Stripe (basic invoicing)
-- WhatsApp Business API (or web chat fallback)
+- WhatsApp Business API
 
-**Post-MVP Integrations:**
+**Phase 3+ Integrations:**
 - Gmail
 - Google Docs
 - Google Sheets
