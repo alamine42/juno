@@ -1,5 +1,5 @@
-// Generated types will go here after running `npm run db:generate`
-// For now, define the basic structure
+// Database types for Supabase
+// Re-run `npm run db:generate` after schema changes to regenerate
 
 export type Json =
   | string
@@ -91,6 +91,76 @@ export interface Database {
           updated_at?: string
         }
       }
+      content_frameworks: {
+        Row: {
+          id: string
+          name: string
+          description: string | null
+          output_type: string | null
+          questions: Json
+          prompt_template: string
+          display_order: number
+          active: boolean
+          created_at: string
+        }
+        Insert: {
+          id: string
+          name: string
+          description?: string | null
+          output_type?: string | null
+          questions: Json
+          prompt_template: string
+          display_order?: number
+          active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          description?: string | null
+          output_type?: string | null
+          questions?: Json
+          prompt_template?: string
+          display_order?: number
+          active?: boolean
+          created_at?: string
+        }
+      }
+      content_batches: {
+        Row: {
+          id: string
+          coach_id: string
+          focus_topic: string | null
+          posting_days: string[] | null
+          has_promotion: boolean
+          promotion_text: string | null
+          status: string
+          created_at: string
+          completed_at: string | null
+        }
+        Insert: {
+          id?: string
+          coach_id: string
+          focus_topic?: string | null
+          posting_days?: string[] | null
+          has_promotion?: boolean
+          promotion_text?: string | null
+          status?: string
+          created_at?: string
+          completed_at?: string | null
+        }
+        Update: {
+          id?: string
+          coach_id?: string
+          focus_topic?: string | null
+          posting_days?: string[] | null
+          has_promotion?: boolean
+          promotion_text?: string | null
+          status?: string
+          created_at?: string
+          completed_at?: string | null
+        }
+      }
       content: {
         Row: {
           id: string
@@ -99,8 +169,10 @@ export interface Database {
           status: string
           body: string
           framework_id: string | null
+          framework_answers: Json | null
           batch_id: string | null
           batch_position: number | null
+          reminder_at: string | null
           created_at: string
           updated_at: string
         }
@@ -111,8 +183,10 @@ export interface Database {
           status?: string
           body: string
           framework_id?: string | null
+          framework_answers?: Json | null
           batch_id?: string | null
           batch_position?: number | null
+          reminder_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -123,8 +197,10 @@ export interface Database {
           status?: string
           body?: string
           framework_id?: string | null
+          framework_answers?: Json | null
           batch_id?: string | null
           batch_position?: number | null
+          reminder_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -135,6 +211,7 @@ export interface Database {
           coach_id: string
           role: 'user' | 'assistant'
           content: string
+          content_id: string | null
           created_at: string
         }
         Insert: {
@@ -142,6 +219,7 @@ export interface Database {
           coach_id: string
           role: 'user' | 'assistant'
           content: string
+          content_id?: string | null
           created_at?: string
         }
         Update: {
@@ -149,6 +227,36 @@ export interface Database {
           coach_id?: string
           role?: 'user' | 'assistant'
           content?: string
+          content_id?: string | null
+          created_at?: string
+        }
+      }
+      framework_usage: {
+        Row: {
+          id: string
+          coach_id: string
+          framework_id: string
+          content_id: string | null
+          answers: Json | null
+          completed: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          coach_id: string
+          framework_id: string
+          content_id?: string | null
+          answers?: Json | null
+          completed?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          coach_id?: string
+          framework_id?: string
+          content_id?: string | null
+          answers?: Json | null
+          completed?: boolean
           created_at?: string
         }
       }
@@ -164,3 +272,20 @@ export interface Database {
     }
   }
 }
+
+// Helper types for easier usage
+export type Tables<T extends keyof Database['public']['Tables']> =
+  Database['public']['Tables'][T]['Row']
+export type InsertTables<T extends keyof Database['public']['Tables']> =
+  Database['public']['Tables'][T]['Insert']
+export type UpdateTables<T extends keyof Database['public']['Tables']> =
+  Database['public']['Tables'][T]['Update']
+
+// Commonly used types
+export type Coach = Tables<'coaches'>
+export type BrandProfile = Tables<'brand_profiles'>
+export type Content = Tables<'content'>
+export type ChatMessage = Tables<'chat_messages'>
+export type ContentFramework = Tables<'content_frameworks'>
+export type ContentBatch = Tables<'content_batches'>
+export type FrameworkUsage = Tables<'framework_usage'>

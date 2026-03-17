@@ -1,5 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 
+// Use environment variable for model, with fallback to a known good model
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514'
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 })
@@ -15,6 +18,19 @@ export interface BrandProfile {
   target_audience: string | null
   example_posts: string[] | null
 }
+
+export interface GenerationResult {
+  success: true
+  content: string
+}
+
+export interface GenerationError {
+  success: false
+  error: string
+  code: 'api_error' | 'rate_limit' | 'invalid_request' | 'unknown'
+}
+
+export type GenerationResponse = GenerationResult | GenerationError
 
 export function buildSystemPrompt(brandProfile: BrandProfile | null): string {
   const basePrompt = `You are Juno, an AI assistant for fitness and wellness coaches.
@@ -71,7 +87,7 @@ export async function generateContent(
   userMessage: string,
   brandProfile: BrandProfile | null,
   conversationHistory: { role: 'user' | 'assistant'; content: string }[] = []
-): Promise<string> {
+): Promise<GenerationResponse> {
   const systemPrompt = buildSystemPrompt(brandProfile)
 
   const messages = [
@@ -82,13 +98,56 @@ export async function generateContent(
     { role: 'user' as const, content: userMessage },
   ]
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 2048,
-    system: systemPrompt,
-    messages,
-  })
+  try {
+    const response = await anthropic.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 2048,
+      system: systemPrompt,
+      messages,
+    })
 
-  const textBlock = response.content.find((block) => block.type === 'text')
-  return textBlock?.type === 'text' ? textBlock.text : ''
+    const textBlock = response.content.find((block) => block.type === 'text')
+    const content = textBlock?.type === 'text' ? textBlock.text : ''
+
+    return { success: true, content }
+  } catch (err) {
+    // Log error without leaking the prompt
+    const error = err as Error & { status?: number; code?: string }
+    console.error('Claude API error:', {
+      message: error.message,
+      status: error.status,
+      code: error.code,
+    })
+
+    // Categorize the error
+    if (error.status === 429) {
+      return {
+        success: false,
+        error: 'Rate limit exceeded. Please try again in a moment.',
+        code: 'rate_limit',
+      }
+    }
+
+    if (error.status === 400) {
+      return {
+        success: false,
+        error: 'Invalid request. Please try rephrasing your message.',
+        code: 'invalid_request',
+      }
+    }
+
+    if (error.status && error.status >= 500) {
+      return {
+        success: false,
+        error: 'AI service is temporarily unavailable. Please try again.',
+        code: 'api_error',
+      }
+    }
+
+    return {
+      success: false,
+      error: 'Failed to generate content. Please try again.',
+      code: 'unknown',
+    }
+  }
 }

@@ -320,6 +320,14 @@ CREATE POLICY "Coaches can insert own framework usage"
   ON framework_usage FOR INSERT
   WITH CHECK (coach_id = auth.uid());
 
+CREATE POLICY "Coaches can update own framework usage"
+  ON framework_usage FOR UPDATE
+  USING (coach_id = auth.uid());
+
+CREATE POLICY "Coaches can delete own framework usage"
+  ON framework_usage FOR DELETE
+  USING (coach_id = auth.uid());
+
 -- ============================================
 -- HELPER FUNCTIONS
 -- ============================================
@@ -349,7 +357,11 @@ CREATE TRIGGER update_content_updated_at
 -- AUTH TRIGGER: Create coach on signup
 -- ============================================
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
   INSERT INTO public.coaches (id, email)
   VALUES (NEW.id, NEW.email);
@@ -360,7 +372,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
