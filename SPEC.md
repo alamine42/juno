@@ -2363,7 +2363,10 @@ The 8-week timeline with 63+ skills is not realistic for a solo founder. **Commi
 | Feature | TRUE MVP (ship this) | Everything Else (post-launch) |
 |---------|----------------------|-------------------------------|
 | Chat | Web chat only | WhatsApp |
-| Content | Claude generates captions (no voice learning) | Voice model, memory, RAG |
+| Content | Claude generates captions + **lightweight voice learning** | Full voice model, memory, RAG |
+| **Voice Learning** | **Onboarding questionnaire + example posts** | ML-based style learning |
+| **Content Frameworks** | **5 guided templates** (Client Win, Carousel, etc.) | Custom frameworks, A/B testing |
+| **Batch Generation** | **"Plan My Week" - 5-6 posts at once** | Multi-week planning, auto-scheduling |
 | Posting | **Manual copy/paste** | Auto-posting via Instagram API |
 | Moderation | Basic Green/Yellow/Red classification | Staged retries, video/audio, caching |
 | Scheduling | "Post at 9am tomorrow" → copy reminder | DST-aware timers, sweep jobs |
@@ -2385,30 +2388,737 @@ The 8-week timeline with 63+ skills is not realistic for a solo founder. **Commi
 - WhatsApp Business API
 - Auto-posting to Instagram API
 - Google Calendar sync
-- Voice learning / memory system
+- **Full** voice learning / memory system (ML-based; lightweight onboarding-based version IS in MVP)
 - Canva integration
 - Analytics dashboard
 - Fitness coaching skills (58+ skills)
 - Stripe billing
 - Knowledge base uploads
 - Video/audio moderation
+- Custom content frameworks (coach-created)
+- Multi-week content planning
+
+---
+
+## MVP Differentiation Features
+
+These three features differentiate Juno from "just using ChatGPT directly" and justify the product's existence:
+
+| Feature | Differentiation |
+|---------|-----------------|
+| Voice Learning | "Juno knows my voice from day one" |
+| Content Frameworks | "Juno guides me through proven formats" |
+| Batch Generation | "Juno plans my whole week in minutes" |
+
+---
+
+### Voice Learning (MVP)
+
+**Goal:** Generate content that sounds like the coach from day one, without complex ML.
+
+**How It Works:**
+Voice learning in MVP is **prompt engineering + persistent storage**, not machine learning. We capture the coach's style during onboarding and inject it into every generation request.
+
+#### Onboarding Questionnaire
+
+During signup (after auth, before first chat), coaches complete a 2-minute brand profile:
+
+**Required Questions (5):**
+1. "How would you describe your coaching style in 3 words?" → free text
+2. "What tone do you use with your audience?" → select: Motivational / Educational / Casual/Friendly / Professional / Raw/Unfiltered
+3. "Do you use emojis?" → select: Never / Sparingly / Frequently / Heavily 🔥💪
+4. "How do you typically end your posts?" → free text (e.g., "Let's go!", "DM me to chat", "Drop a 🔥 if you agree")
+5. "What topics do you NEVER want to discuss?" → free text (e.g., "politics", "competitor brands", "specific diets")
+
+**Optional Questions (shown after required, skippable):**
+6. "Paste 1-3 of your best Instagram captions" → textarea, parsed and stored
+7. "Words or phrases you love to use" → free text
+8. "Words or phrases you avoid" → free text
+9. "Your target audience in one sentence" → free text
+
+**UX Flow:**
+```
+Sign up → Email verification → Brand Profile (this) → First chat
+                                      ↓
+                              [Skip for now] → Prompt again after 3rd generation
+```
+
+#### Data Model
+
+```sql
+CREATE TABLE brand_profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  coach_id UUID UNIQUE REFERENCES coaches(id) ON DELETE CASCADE,
+
+  -- Core voice attributes
+  style_words VARCHAR(255),           -- "energetic, no-BS, supportive"
+  tone VARCHAR(50),                   -- 'motivational', 'educational', 'casual', 'professional', 'raw'
+  emoji_usage VARCHAR(20),            -- 'never', 'sparingly', 'frequently', 'heavily'
+  sign_off TEXT,                      -- "Let's go! 💪"
+
+  -- Boundaries
+  avoided_topics TEXT[],              -- ['politics', 'competitor X']
+  avoided_words TEXT[],               -- ['just', 'very', 'amazing']
+  preferred_words TEXT[],             -- ['transform', 'unleash', 'crush it']
+
+  -- Audience
+  target_audience TEXT,               -- "Busy moms who want to get strong"
+
+  -- Example content (for style matching)
+  example_posts TEXT[],               -- Up to 5 pasted captions
+
+  -- Metadata
+  completed_at TIMESTAMP WITH TIME ZONE,  -- NULL if skipped
+  skipped_count INTEGER DEFAULT 0,        -- Times they've skipped
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+#### System Prompt Injection
+
+Every content generation request includes the brand profile as context:
+
+```typescript
+function buildSystemPrompt(coach: Coach, brandProfile: BrandProfile | null): string {
+  const basePrompt = `You are Juno, an AI assistant for fitness and wellness coaches.
+You help create Instagram content that sounds authentic to the coach's voice.`;
+
+  if (!brandProfile || !brandProfile.completed_at) {
+    return `${basePrompt}
+
+The coach hasn't set up their brand profile yet. Use a friendly, professional tone.
+Ask clarifying questions about their style if the request is ambiguous.`;
+  }
+
+  return `${basePrompt}
+
+## This Coach's Brand Voice
+
+**Style:** ${brandProfile.style_words || 'Not specified'}
+**Tone:** ${brandProfile.tone || 'professional'}
+**Emoji usage:** ${brandProfile.emoji_usage || 'sparingly'}
+**Typical sign-off:** ${brandProfile.sign_off || 'None specified'}
+**Target audience:** ${brandProfile.target_audience || 'General fitness audience'}
+
+${brandProfile.preferred_words?.length ? `**Words/phrases they love:** ${brandProfile.preferred_words.join(', ')}` : ''}
+${brandProfile.avoided_words?.length ? `**Words/phrases to AVOID:** ${brandProfile.avoided_words.join(', ')}` : ''}
+${brandProfile.avoided_topics?.length ? `**Topics to NEVER mention:** ${brandProfile.avoided_topics.join(', ')}` : ''}
+
+${brandProfile.example_posts?.length ? `**Examples of their writing style:**
+${brandProfile.example_posts.map((post, i) => `${i + 1}. "${post.slice(0, 500)}${post.length > 500 ? '...' : ''}"`).join('\n')}` : ''}
+
+Match this voice exactly. Don't be generic—sound like THIS coach.`;
+}
+```
+
+#### Profile Updates
+
+Coaches can update their brand profile anytime via:
+- Web portal: Settings → Brand Voice
+- Chat: "Update my brand voice" → Juno walks through questions again
+
+**Partial updates supported:** Coach can change just emoji preference without re-doing everything.
+
+#### Edge Cases
+
+| Scenario | Handling |
+|----------|----------|
+| Coach skips onboarding | Use generic professional tone; prompt again after 3 generations |
+| Coach skips 3+ times | Stop prompting; show banner in portal "Set up your brand voice" |
+| Conflicting instructions | Chat instruction overrides profile (e.g., "make this more formal" works even if profile says "casual") |
+| Example posts contain PII | Strip @mentions and names before storing; warn coach |
+| Coach pastes competitor content | Accept it (we can't verify authorship); their risk |
+
+#### Success Metrics
+
+- 80%+ coaches complete brand profile within first week
+- Generated content rejection rate <10% (proxy for voice match)
+- Qualitative: "It sounds like me" in user interviews
+
+---
+
+### Content Frameworks (MVP)
+
+**Goal:** Guide coaches through proven Instagram content formats instead of requiring them to know what to ask for.
+
+#### The Problem
+
+Coaches using ChatGPT directly must:
+1. Know what type of content to create
+2. Structure their prompt correctly
+3. Provide all necessary context
+
+Juno solves this with **guided frameworks**—structured templates that ask the right questions and generate format-appropriate content.
+
+#### MVP Frameworks (5)
+
+##### Framework 1: Client Win Story
+**Purpose:** Celebrate client success, build social proof
+**Output:** Single image caption (150-300 words)
+
+**Guided Questions:**
+1. "Client's first name (or 'a client' if anonymous)" → text
+2. "What did they achieve?" → text (e.g., "lost 30 lbs", "ran first 5K")
+3. "What was their biggest obstacle?" → text
+4. "How long did it take?" → text
+5. "One lesson others can learn from this" → text
+
+**Generation Prompt Template:**
+```
+Write an Instagram caption celebrating a client transformation.
+
+Client: {name}
+Achievement: {achievement}
+Obstacle they overcame: {obstacle}
+Timeframe: {timeframe}
+Key lesson: {lesson}
+
+Structure:
+- Hook (stop the scroll)
+- The struggle (relatable)
+- The transformation (specific)
+- The lesson (actionable)
+- CTA (engagement or DM)
+
+[Apply coach's brand voice from profile]
+```
+
+##### Framework 2: Educational Carousel
+**Purpose:** Teach something valuable, establish expertise
+**Output:** Carousel script (cover + 5-7 slides + CTA slide)
+
+**Guided Questions:**
+1. "What topic do you want to teach?" → text
+2. "Who is this for?" → text (e.g., "beginners", "busy parents")
+3. "What's the common mistake people make with this?" → text
+4. "What's your unique take or method?" → text
+
+**Generation Prompt Template:**
+```
+Create an Instagram carousel script about {topic}.
+
+Target audience: {audience}
+Common mistake: {mistake}
+Coach's unique approach: {unique_take}
+
+Structure:
+- Slide 1 (Cover): Bold claim or question that stops the scroll
+- Slides 2-6: One key point per slide (short, scannable)
+- Slide 7: Summary or "The truth is..."
+- Slide 8: CTA (save, share, follow, DM)
+
+Format each slide as:
+**Slide N: [Title]**
+[Body text - max 30 words per slide]
+
+[Apply coach's brand voice from profile]
+```
+
+##### Framework 3: Engagement Hook
+**Purpose:** Start conversations, boost algorithm
+**Output:** Short caption (50-100 words) with question/poll
+
+**Guided Questions:**
+1. "What's a spicy or controversial take you have?" → text
+2. "Or: What's a common myth in your niche?" → text (alternative)
+3. "What do you want people to comment?" → select: Their opinion / Their experience / A or B choice
+
+**Generation Prompt Template:**
+```
+Write a short Instagram engagement post.
+
+Hot take or myth: {take_or_myth}
+Desired engagement: {engagement_type}
+
+Structure:
+- Bold statement (challenge conventional wisdom)
+- Brief explanation (1-2 sentences)
+- Direct question to audience
+
+Keep it under 100 words. End with a question that's easy to answer.
+
+[Apply coach's brand voice from profile]
+```
+
+##### Framework 4: Behind the Scenes
+**Purpose:** Build connection, show authenticity
+**Output:** Casual caption (100-200 words)
+
+**Guided Questions:**
+1. "What are you doing today?" → text (e.g., "meal prepping", "training a client", "taking a rest day")
+2. "Why does this matter to your audience?" → text
+3. "What's one thing people don't realize about this?" → text
+
+**Generation Prompt Template:**
+```
+Write a casual behind-the-scenes Instagram caption.
+
+Activity: {activity}
+Why it matters: {why_it_matters}
+Insider insight: {insight}
+
+Structure:
+- Casual opener (like talking to a friend)
+- What you're doing and why
+- The insight or lesson
+- Soft CTA (question or invitation to share theirs)
+
+Keep it conversational and authentic. Not salesy.
+
+[Apply coach's brand voice from profile]
+```
+
+##### Framework 5: Myth Buster
+**Purpose:** Establish authority, challenge misinformation
+**Output:** Medium caption (150-250 words)
+
+**Guided Questions:**
+1. "What myth or misconception do you want to bust?" → text
+2. "Why do people believe this?" → text
+3. "What's the truth?" → text
+4. "What should people do instead?" → text
+
+**Generation Prompt Template:**
+```
+Write an Instagram caption busting a fitness/wellness myth.
+
+Myth: {myth}
+Why people believe it: {why_believed}
+The truth: {truth}
+What to do instead: {action}
+
+Structure:
+- Hook: State the myth boldly ("Stop believing this...")
+- Acknowledge why it's believable
+- Drop the truth (with brief explanation)
+- Actionable alternative
+- CTA (save this, share with someone who needs it)
+
+Be authoritative but not condescending.
+
+[Apply coach's brand voice from profile]
+```
+
+#### UX Flow
+
+**Entry Points:**
+1. Chat: "I want to create content" → Juno offers framework picker
+2. Chat: "Help me with a client win post" → Juno starts Client Win framework directly
+3. Web portal: "New Content" button → Framework picker modal
+
+**Framework Picker (Chat):**
+```
+Juno: What kind of content do you want to create?
+
+[Client Win Story] - Celebrate a transformation
+[Educational Carousel] - Teach something valuable
+[Engagement Hook] - Start a conversation
+[Behind the Scenes] - Show the real you
+[Myth Buster] - Challenge misinformation
+[Freeform] - Just tell me what you need
+```
+
+**Guided Flow Example (Chat):**
+```
+Coach: [Clicks "Client Win Story"]
+
+Juno: Let's create a client win post! 🎉
+
+First, what's your client's name? (Or say "anonymous" to keep it private)
+
+Coach: Sarah
+
+Juno: What did Sarah achieve?
+
+Coach: She lost 25 pounds and got off her blood pressure medication
+
+Juno: That's amazing! What was her biggest obstacle before working with you?
+
+Coach: She had tried every diet and always gave up after 2 weeks
+
+Juno: How long did this transformation take?
+
+Coach: 6 months
+
+Juno: Last one—what's the key lesson others can learn from Sarah's story?
+
+Coach: Consistency beats perfection. She wasn't perfect, she was persistent.
+
+Juno: Here's your client win post:
+
+---
+[Generated caption]
+---
+
+[Edit] [Save Draft] [Schedule Reminder] [Start Over]
+```
+
+#### Data Model
+
+```sql
+CREATE TABLE content_frameworks (
+  id VARCHAR(50) PRIMARY KEY,          -- 'client_win', 'carousel', etc.
+  name VARCHAR(100) NOT NULL,
+  description TEXT,
+  output_type VARCHAR(50),             -- 'caption', 'carousel_script'
+  questions JSONB NOT NULL,            -- Array of question objects
+  prompt_template TEXT NOT NULL,
+  display_order INTEGER DEFAULT 0,
+  active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Track framework usage for analytics
+CREATE TABLE framework_usage (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  coach_id UUID REFERENCES coaches(id),
+  framework_id VARCHAR(50) REFERENCES content_frameworks(id),
+  content_id UUID REFERENCES content(id),  -- Resulting content
+  answers JSONB,                            -- Their answers (for debugging)
+  completed BOOLEAN DEFAULT false,          -- Did they finish or abandon?
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+#### Framework Extensibility (Post-MVP)
+
+MVP ships with 5 hardcoded frameworks. Post-MVP:
+- Admin can add/edit frameworks without code deploy
+- Coaches can create custom frameworks (power users)
+- A/B test framework variations
+
+#### Edge Cases
+
+| Scenario | Handling |
+|----------|----------|
+| Coach abandons mid-framework | Save partial answers; offer to resume next session |
+| Coach wants to skip a question | Allow skip; generate with placeholder or omit that element |
+| Generated content too long | Offer "Make it shorter" quick action |
+| Coach picks wrong framework | "Start over" returns to picker; preserve no state |
+| Framework question unclear | Include example answer in parentheses |
+
+---
+
+### Batch Generation - "Plan My Week" (MVP)
+
+**Goal:** Generate a week of varied content in one conversation, not one post at a time.
+
+#### The Problem
+
+Coaches using ChatGPT generate content reactively—one post when they realize they need one. This leads to:
+- Inconsistent posting frequency
+- Same content types repeatedly
+- Last-minute stress
+
+Juno's batch generation creates a **content calendar** in one session.
+
+#### How It Works
+
+**Trigger:** Coach says "plan my week", "I need content for this week", or clicks [Plan My Week] button.
+
+**Output:** 5-7 posts with intentional variety:
+- 2 Educational (carousel scripts or single-image)
+- 1 Client Win / Social Proof
+- 1 Personal / Behind the Scenes
+- 1 Engagement / Conversation Starter
+- 1 Promotional / CTA (optional, coach can skip)
+- 1 Wildcard (trending topic, seasonal, or coach's choice)
+
+#### UX Flow
+
+```
+Coach: Plan my week
+
+Juno: Let's plan your content for this week! 📅
+
+I'll create 5-6 posts with a good mix:
+• 2 educational posts
+• 1 client win
+• 1 behind-the-scenes
+• 1 engagement post
+• 1 promotional (optional)
+
+A few quick questions first:
+
+1. Any specific topic you want to focus on this week?
+   (e.g., "nutrition basics", "mindset", or "no preference")
+
+Coach: Let's focus on building habits
+
+Juno: 2. Do you have a client win you'd like to feature?
+   [Yes, let me tell you about it] [Skip - make one up] [No client wins this week]
+
+Coach: Skip - make one up
+
+Juno: 3. Anything you're promoting this week?
+   (e.g., "1:1 coaching spots open", "free workshop Friday", or "nothing specific")
+
+Coach: I have 2 coaching spots opening up next month
+
+Juno: 4. Any days you definitely want to post? Or should I suggest a schedule?
+   [Mon/Wed/Fri] [Tue/Thu/Sat] [Every day] [You decide]
+
+Coach: Mon/Wed/Fri
+
+Juno: Got it! Generating your week...
+
+---
+
+## Your Content Plan: March 17-21
+
+### Monday - Educational Carousel
+**Topic:** "5 Habits That Actually Stick (And Why Most Fail)"
+**Type:** Carousel (8 slides)
+
+[Preview]
+Slide 1: "Why your habits keep failing (it's not discipline)"
+Slide 2: "Habit #1: Start stupidly small"
+...
+
+[Edit] [Save Draft] [Schedule Mon 9am]
+
+---
+
+### Wednesday - Client Win
+**Topic:** Client transformation story (anonymous)
+**Type:** Single image caption
+
+[Preview]
+"6 months ago, she couldn't do a single push-up..."
+
+[Edit] [Save Draft] [Schedule Wed 9am]
+
+---
+
+### Friday - Engagement Hook
+**Topic:** Habit myth buster + question
+**Type:** Short caption
+
+[Preview]
+"Unpopular opinion: Morning routines are overrated..."
+
+[Edit] [Save Draft] [Schedule Fri 9am]
+
+---
+
+### Bonus: Promotional Post
+**Topic:** Coaching spots opening
+**Type:** Story-driven CTA
+
+[Preview]
+"I have 2 spots opening next month for 1:1 coaching..."
+
+[Edit] [Save Draft] [Schedule Fri 5pm]
+
+---
+
+[Save All as Drafts] [Edit Individual Posts] [Regenerate Week]
+```
+
+#### Content Mix Logic
+
+```typescript
+interface WeekPlan {
+  educational: 2;      // Always 2
+  social_proof: 1;     // Client win or testimonial
+  personal: 1;         // BTS, day-in-life, personal story
+  engagement: 1;       // Question, poll, hot take
+  promotional: 0 | 1;  // Only if coach has something to promote
+  wildcard: 0 | 1;     // Seasonal, trending, or fills gaps
+}
+
+function generateWeekPlan(
+  coach: Coach,
+  brandProfile: BrandProfile,
+  inputs: {
+    focusTopic?: string;
+    clientWin?: { name: string; achievement: string; obstacle: string } | 'skip' | 'none';
+    promotion?: string;
+    postingDays: string[];  // ['monday', 'wednesday', 'friday']
+  }
+): ContentPlan[] {
+  const plan: ContentPlan[] = [];
+
+  // Distribute content types across posting days
+  const schedule = distributeContent(inputs.postingDays, {
+    educational: 2,
+    social_proof: inputs.clientWin !== 'none' ? 1 : 0,
+    personal: 1,
+    engagement: 1,
+    promotional: inputs.promotion ? 1 : 0,
+  });
+
+  // Generate each piece using appropriate framework
+  for (const slot of schedule) {
+    const content = generateContent(slot.type, {
+      coach,
+      brandProfile,
+      focusTopic: inputs.focusTopic,
+      clientWin: inputs.clientWin,
+      promotion: inputs.promotion,
+    });
+    plan.push({
+      ...content,
+      suggestedDay: slot.day,
+      suggestedTime: coach.preferredPostingTime || '09:00',
+    });
+  }
+
+  return plan;
+}
+```
+
+#### Data Model
+
+```sql
+-- Batch generation sessions
+CREATE TABLE content_batches (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  coach_id UUID REFERENCES coaches(id) ON DELETE CASCADE,
+
+  -- Inputs
+  focus_topic TEXT,
+  posting_days TEXT[],                -- ['monday', 'wednesday', 'friday']
+  has_promotion BOOLEAN DEFAULT false,
+  promotion_text TEXT,
+
+  -- Status
+  status VARCHAR(20) DEFAULT 'generating', -- 'generating', 'ready', 'partial_saved', 'all_saved'
+
+  -- Metadata
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  completed_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Link batch to generated content
+CREATE TABLE content_batch_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  batch_id UUID REFERENCES content_batches(id) ON DELETE CASCADE,
+  content_id UUID REFERENCES content(id) ON DELETE SET NULL,
+
+  -- Planning
+  content_type VARCHAR(50),           -- 'educational', 'client_win', etc.
+  suggested_day VARCHAR(20),          -- 'monday'
+  suggested_time TIME,                -- '09:00'
+  position INTEGER,                   -- Order in the week
+
+  -- Status
+  status VARCHAR(20) DEFAULT 'generated', -- 'generated', 'edited', 'saved', 'scheduled', 'skipped'
+
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Add batch reference to content table
+ALTER TABLE content ADD COLUMN batch_id UUID REFERENCES content_batches(id);
+ALTER TABLE content ADD COLUMN batch_position INTEGER;
+```
+
+#### Generation Strategy
+
+**Single API Call vs. Multiple:**
+- MVP: Generate all 5-6 posts in a single Claude API call with structured output
+- Reduces latency (one round-trip vs. five)
+- Use XML tags to separate posts in the response
+
+**Prompt Structure:**
+```
+Generate a week of Instagram content for this fitness coach.
+
+[Brand profile injected here]
+
+Focus topic: {focus_topic}
+Posting schedule: {posting_days}
+Promotion: {promotion_text or "None"}
+
+Generate exactly {n} posts:
+
+1. EDUCATIONAL CAROUSEL about {focus_topic}
+<post type="educational_carousel">
+[Carousel script here]
+</post>
+
+2. EDUCATIONAL SINGLE POST about {focus_topic}
+<post type="educational_single">
+[Caption here]
+</post>
+
+3. CLIENT WIN STORY
+<post type="client_win">
+[Caption here]
+</post>
+
+... etc.
+
+Each post should:
+- Match the coach's voice exactly
+- Be ready to post (no placeholders)
+- Vary in length and energy
+- Build on each other thematically when possible
+```
+
+#### Editing Flow
+
+After batch generation, coach can:
+1. **Edit individual posts** → Opens single-post editor, preserves others
+2. **Regenerate one post** → "I don't like this one, try again"
+3. **Swap content types** → "Make Wednesday's post promotional instead"
+4. **Skip a post** → Remove from batch, reduce week's content
+5. **Add a post** → "Can you add one more for Sunday?"
+
+#### Coherence Features
+
+Batch generation enables **thematic coherence** across the week:
+
+- If focus topic is "habits", all educational content relates to habits
+- Client win ties into focus topic when possible ("Sarah built the habit of...")
+- Engagement hook challenges a habit myth
+- Promotional post frames coaching as "habit accountability"
+
+This coherence is impossible when generating posts one at a time.
+
+#### Edge Cases
+
+| Scenario | Handling |
+|----------|----------|
+| Coach wants different schedule | Allow custom days: "Actually, I post Tue/Thu/Sun" |
+| Generation takes too long | Stream first post immediately, others appear as ready |
+| Coach loves 3 of 5 posts | "Save All" saves all; individual saves work too |
+| Coach closes browser mid-batch | Batch persists; show "Continue your content plan?" on return |
+| Coach wants 2 weeks | "Let's do this week first, then plan next week" (scope control) |
+| Duplicate content types | Allow: "I want 3 educational posts this week" |
+
+#### Success Metrics
+
+- 30%+ of content created via batch generation (vs. single posts)
+- Coaches who use batch generation post 2x more frequently
+- Time-to-content-plan: <5 minutes for full week
+- Batch completion rate: 70%+ save at least 3 of 5 posts
+
+---
 
 ### Week 1: Foundation (TRUE MVP)
 - [ ] Next.js project setup with TypeScript
 - [ ] PostgreSQL setup (Supabase)
 - [ ] Auth system (magic link)
-- [ ] Basic data models: Coach, Content, ChatMessage
+- [ ] Basic data models: Coach, Content, ChatMessage, **BrandProfile**
 - [ ] Supabase Realtime setup for web chat
+- [ ] **Content frameworks table** (5 hardcoded frameworks)
 
 ### Week 2: Web Chat + Basic UI
 - [ ] Web portal: signup, login, settings
+- [ ] **Brand profile onboarding flow** (5 required + 4 optional questions)
 - [ ] **Web chat interface (primary channel, not fallback)**
 - [ ] Chat state management (session-based)
-- [ ] Basic coach profile/settings page
+- [ ] Basic coach profile/settings page (including brand voice editing)
 - [ ] Content list view (empty for now)
 
-### Week 3: Content Generation (5 Skills Only)
+### Week 3: Content Generation + Differentiation Features
 - [ ] Claude integration for content generation
+- [ ] **System prompt injection from brand profile** (voice learning)
+- [ ] **Content framework picker UI** (5 frameworks)
+- [ ] **Guided framework flows** (question → answer → generate)
+- [ ] **Batch generation: "Plan My Week"** (5-6 posts with variety)
 - [ ] **Skill: generate_caption** - Claude generates Instagram caption from prompt
 - [ ] **Skill: edit_caption** - Refine based on coach feedback
 - [ ] **Skill: save_draft** - Store content for later
@@ -2416,6 +3126,7 @@ The 8-week timeline with 63+ skills is not realistic for a solo founder. **Commi
 - [ ] **Skill: send_chat_message** - Juno responds in chat
 - [ ] Content preview in web portal
 - [ ] Copy-to-clipboard button for manual posting
+- [ ] Batch content calendar view
 
 ### Week 4: Moderation + Beta Launch
 - [ ] **Basic moderation (Green/Yellow/Red classification)**
