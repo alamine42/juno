@@ -45,3 +45,4 @@ supabase/.temp/
 
 # Handover docs (session-specific)
 HANDOVER.md
+.gstack/

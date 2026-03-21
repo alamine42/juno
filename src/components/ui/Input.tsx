@@ -17,7 +17,7 @@ export function Input({ label, error, id, className = '', ...props }: InputProps
         id={id}
         aria-invalid={error ? 'true' : undefined}
         aria-describedby={error && id ? `${id}-error` : undefined}
-        className={`w-full px-4 py-3 border rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors ${
+        className={`w-full px-4 py-3 min-h-[44px] border rounded-lg text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus:border-transparent transition-colors duration-150 ${
           error ? 'border-red-500' : 'border-gray-300'
         } ${className}`}
         {...props}

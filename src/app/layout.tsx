@@ -5,8 +5,11 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Juno - AI Chief of Staff for Coaches',
-  description: 'Your AI assistant for content creation, scheduling, and business operations.',
+  title: 'Juno - AI Content Assistant for Coaches',
+  description: 'Create Instagram content that sounds like you. AI-powered content creation for fitness and wellness coaches.',
+  icons: {
+    icon: '/favicon.svg',
+  },
 }
 
 export default function RootLayout({

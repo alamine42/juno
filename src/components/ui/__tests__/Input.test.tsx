@@ -36,8 +36,8 @@ describe('Input', () => {
     expect(screen.getByRole('textbox')).toHaveAttribute('maxLength', '255')
   })
 
-  it('has focus ring styling class', () => {
+  it('has focus-visible ring styling class', () => {
     render(<Input label="Name" id="name" />)
-    expect(screen.getByRole('textbox').className).toContain('focus:ring')
+    expect(screen.getByRole('textbox').className).toContain('focus-visible:ring')
   })
 })
