@@ -87,7 +87,12 @@ describe('OnboardingPage', () => {
     })
   })
 
-  it('completing all steps calls API with profile data and redirects', async () => {
+  it('completing all steps shows wow moment with sample post', async () => {
+    // Mock profile save success and chat generation success
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) }) // /api/profile
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ message: 'Sample post content!' }) }) // /api/chat
+
     render(<OnboardingPage />)
 
     // Step 1: Style words
@@ -118,14 +123,112 @@ describe('OnboardingPage', () => {
     await waitFor(() => expect(screen.getByText(/step 6/i)).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: /finish/i }))
 
+    // Should show loading state first
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith('/api/profile', expect.objectContaining({
-        method: 'PATCH',
-        body: expect.stringContaining('energetic'),
-      }))
+      expect(screen.getByText(/let me show you something/i)).toBeInTheDocument()
     })
+
+    // Then show the preview with "Sound like you?"
+    await waitFor(() => {
+      expect(screen.getByText(/sound like you/i)).toBeInTheDocument()
+    })
+
+    // Verify profile was saved
+    expect(mockFetch).toHaveBeenCalledWith('/api/profile', expect.objectContaining({
+      method: 'PATCH',
+      body: expect.stringContaining('energetic'),
+    }))
+
+    // Verify sample was generated
+    expect(mockFetch).toHaveBeenCalledWith('/api/chat', expect.objectContaining({
+      method: 'POST',
+    }))
+  })
+
+  it('clicking "Yes, let\'s go!" redirects to chat', async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ message: 'Sample post!' }) })
+
+    render(<OnboardingPage />)
+
+    // Complete all steps quickly
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'test' } })
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
+    await waitFor(() => expect(screen.getByText(/step 2/i)).toBeInTheDocument())
+
+    fireEvent.click(screen.getByText(/motivational/i))
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
+    await waitFor(() => expect(screen.getByText(/step 3/i)).toBeInTheDocument())
+
+    fireEvent.click(screen.getByText(/sparingly/i))
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
+    await waitFor(() => expect(screen.getByText(/step 4/i)).toBeInTheDocument())
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'test' } })
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
+    await waitFor(() => expect(screen.getByText(/step 5/i)).toBeInTheDocument())
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'test' } })
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
+    await waitFor(() => expect(screen.getByText(/step 6/i)).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: /finish/i }))
+
+    // Wait for preview
+    await waitFor(() => {
+      expect(screen.getByText(/sound like you/i)).toBeInTheDocument()
+    })
+
+    // Click "Yes, let's go!"
+    fireEvent.click(screen.getByRole('button', { name: /yes.*let.*go/i }))
+
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith('/chat')
+    })
+  })
+
+  it('clicking "Not quite" goes back to form', async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ message: 'Sample!' }) })
+
+    render(<OnboardingPage />)
+
+    // Complete all steps quickly
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'test' } })
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
+    await waitFor(() => expect(screen.getByText(/step 2/i)).toBeInTheDocument())
+
+    fireEvent.click(screen.getByText(/motivational/i))
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
+    await waitFor(() => expect(screen.getByText(/step 3/i)).toBeInTheDocument())
+
+    fireEvent.click(screen.getByText(/sparingly/i))
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
+    await waitFor(() => expect(screen.getByText(/step 4/i)).toBeInTheDocument())
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'test' } })
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
+    await waitFor(() => expect(screen.getByText(/step 5/i)).toBeInTheDocument())
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'test' } })
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
+    await waitFor(() => expect(screen.getByText(/step 6/i)).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: /finish/i }))
+
+    // Wait for preview
+    await waitFor(() => {
+      expect(screen.getByText(/sound like you/i)).toBeInTheDocument()
+    })
+
+    // Click "Not quite"
+    fireEvent.click(screen.getByRole('button', { name: /not quite/i }))
+
+    // Should go back to step 1
+    await waitFor(() => {
+      expect(screen.getByText(/step 1/i)).toBeInTheDocument()
     })
   })
 })

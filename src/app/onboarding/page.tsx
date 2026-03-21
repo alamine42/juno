@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 
 const TONES = ['Motivational', 'Educational', 'Casual', 'Professional', 'Raw'] as const
 const EMOJI_OPTIONS = ['Never', 'Sparingly', 'Frequently', 'Heavily'] as const
@@ -75,12 +76,19 @@ const STEPS = [
   },
 ]
 
+type ViewState = 'form' | 'generating' | 'preview'
+
+const SAMPLE_PROMPT = 'Write a short Instagram post that shows off my coaching style. Make it authentic and ready to post.'
+
 export default function OnboardingPage() {
   const router = useRouter()
   const [step, setStep] = useState(0)
   const [data, setData] = useState<ProfileData>(INITIAL_DATA)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [viewState, setViewState] = useState<ViewState>('form')
+  const [samplePost, setSamplePost] = useState('')
+  const [generateError, setGenerateError] = useState('')
 
   const currentStep = STEPS[step]
   const isLastStep = step === STEPS.length - 1
@@ -119,6 +127,7 @@ export default function OnboardingPage() {
 
   async function handleFinish() {
     setSaving(true)
+    setError('')
 
     // Parse comma-separated strings into arrays
     const parseList = (s: string) =>
@@ -162,9 +171,99 @@ export default function OnboardingPage() {
       return
     }
 
+    // Show the "wow moment" - generate a sample post
+    setViewState('generating')
+    await generateSamplePost()
+  }
+
+  async function generateSamplePost() {
+    setGenerateError('')
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: SAMPLE_PROMPT }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to generate sample')
+      }
+
+      setSamplePost(data.message)
+      setViewState('preview')
+    } catch (err) {
+      setGenerateError(err instanceof Error ? err.message : 'Something went wrong')
+      // Still show preview but with error
+      setViewState('preview')
+    }
+  }
+
+  function handleYes() {
     router.push('/chat')
   }
 
+  function handleNotQuite() {
+    // Go back to the beginning of the form to edit
+    setViewState('form')
+    setSaving(false)
+    setStep(0)
+    setSamplePost('')
+    setGenerateError('')
+  }
+
+  // Generating state
+  if (viewState === 'generating') {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center p-6">
+        <div className="text-center">
+          <LoadingSpinner size="lg" />
+          <p className="mt-4 text-lg text-gray-600">Let me show you something...</p>
+          <p className="mt-2 text-sm text-gray-500">Creating a sample post in your voice</p>
+        </div>
+      </main>
+    )
+  }
+
+  // Preview state - the "wow moment"
+  if (viewState === 'preview') {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center p-6">
+        <div className="w-full max-w-md">
+          <h2 className="text-xl font-semibold text-center mb-6">
+            Here's a sample post in your voice
+          </h2>
+
+          {/* Instagram mockup */}
+          <InstagramPreview content={samplePost} error={generateError} />
+
+          <h3 className="text-lg font-medium text-center mt-6 mb-4">
+            Sound like you?
+          </h3>
+
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={handleYes}
+              disabled={!samplePost}
+              className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50 font-medium"
+            >
+              Yes, let's go!
+            </button>
+            <button
+              onClick={handleNotQuite}
+              className="w-full px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:border-gray-400 transition"
+            >
+              Not quite - let me update my profile
+            </button>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  // Form state
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-6">
       <div className="w-full max-w-lg">
@@ -317,5 +416,43 @@ export default function OnboardingPage() {
         </div>
       </div>
     </main>
+  )
+}
+
+function InstagramPreview({ content, error }: { content: string; error?: string }) {
+  if (error) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
+        <p className="text-red-600 mb-2">Couldn't generate sample</p>
+        <p className="text-sm text-red-500">{error}</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+      {/* IG header */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
+        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 p-0.5">
+          <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
+            <span className="text-xs font-bold text-gray-700">You</span>
+          </div>
+        </div>
+        <span className="font-semibold text-sm">your_handle</span>
+      </div>
+
+      {/* IG image placeholder */}
+      <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
+        <span className="text-gray-400 text-sm">Your image here</span>
+      </div>
+
+      {/* IG caption */}
+      <div className="px-4 py-3">
+        <p className="text-sm whitespace-pre-wrap">
+          <span className="font-semibold mr-1">your_handle</span>
+          {content}
+        </p>
+      </div>
+    </div>
   )
 }
