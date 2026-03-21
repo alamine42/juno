@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { AlertCircle, Heart, MessageCircle, Send } from 'lucide-react'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 
 const TONES = ['Motivational', 'Educational', 'Casual', 'Professional', 'Raw'] as const
@@ -217,11 +218,30 @@ export default function OnboardingPage() {
   // Generating state
   if (viewState === 'generating') {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center p-6">
+      <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-gradient-to-br from-green-50 to-white">
         <div className="text-center">
-          <LoadingSpinner size="lg" />
-          <p className="mt-4 text-lg text-gray-600">Let me show you something...</p>
-          <p className="mt-2 text-sm text-gray-500">Creating a sample post in your voice</p>
+          <div className="mb-6">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100">
+              <LoadingSpinner size="lg" />
+            </div>
+          </div>
+
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            Let me show you something...
+          </h2>
+          <p className="text-base text-gray-600 mb-1">
+            Creating a sample post in your voice
+          </p>
+          <p className="text-sm text-gray-500">
+            This should take about 10 seconds
+          </p>
+
+          {/* Progress dots */}
+          <div className="flex justify-center gap-2 mt-6">
+            <span className="w-1.5 h-1.5 bg-green-600 rounded-full animate-pulse" />
+            <span className="w-1.5 h-1.5 bg-green-600 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+            <span className="w-1.5 h-1.5 bg-green-600 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+          </div>
         </div>
       </main>
     )
@@ -232,14 +252,14 @@ export default function OnboardingPage() {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-6">
         <div className="w-full max-w-md">
-          <h2 className="text-xl font-semibold text-center mb-6">
+          <h2 className="text-2xl font-bold text-center mb-6">
             Here's a sample post in your voice
           </h2>
 
           {/* Instagram mockup */}
           <InstagramPreview content={samplePost} error={generateError} />
 
-          <h3 className="text-lg font-medium text-center mt-6 mb-4">
+          <h3 className="text-xl font-semibold text-center mt-8 mb-4">
             Sound like you?
           </h3>
 
@@ -247,13 +267,13 @@ export default function OnboardingPage() {
             <button
               onClick={handleYes}
               disabled={!samplePost}
-              className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50 font-medium"
+              className="w-full px-6 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white text-lg font-semibold rounded-2xl hover:from-green-600 hover:to-green-700 disabled:from-gray-300 disabled:to-gray-300 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
             >
-              Yes, let's go!
+              ✨ Yes, let's go!
             </button>
             <button
               onClick={handleNotQuite}
-              className="w-full px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:border-gray-400 transition"
+              className="w-full px-6 py-4 border-2 border-gray-300 text-gray-700 text-lg font-semibold rounded-2xl hover:border-gray-400 hover:bg-gray-50 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500"
             >
               Not quite - let me update my profile
             </button>
@@ -269,32 +289,45 @@ export default function OnboardingPage() {
       <div className="w-full max-w-lg">
         {/* Header */}
         <div className="mb-8">
-          <p className="text-sm text-gray-500 mb-1">
-            Step {step + 1} of {STEPS.length}
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-semibold text-gray-600">
+              Step {step + 1} of {STEPS.length}
+            </p>
+            <p className="text-xs text-gray-400">
+              {Math.round(((step + 1) / STEPS.length) * 100)}%
+            </p>
+          </div>
           {/* Progress bar */}
-          <div className="w-full bg-gray-200 rounded-full h-1.5">
+          <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
             <div
-              className="bg-green-600 h-1.5 rounded-full transition-all"
+              className="bg-gradient-to-r from-green-500 via-green-600 to-green-500 h-2 rounded-full transition-all duration-500 ease-out"
               style={{ width: `${((step + 1) / STEPS.length) * 100}%` }}
             />
           </div>
         </div>
 
         {/* Question */}
-        <h2 className="text-xl font-semibold mb-6">{currentStep.question}</h2>
+        <h2 className="text-2xl font-bold mb-6">{currentStep.question}</h2>
 
         {/* Input area */}
         {currentStep.type === 'text' && (
-          <input
-            type="text"
-            value={data[currentStep.key as keyof ProfileData]}
-            onChange={(e) => updateField(currentStep.key as keyof ProfileData, e.target.value)}
-            placeholder={currentStep.placeholder}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-lg"
-            autoFocus
-            onKeyDown={(e) => { if (e.key === 'Enter') handleNext() }}
-          />
+          <div>
+            <input
+              type="text"
+              value={data[currentStep.key as keyof ProfileData]}
+              onChange={(e) => updateField(currentStep.key as keyof ProfileData, e.target.value)}
+              placeholder={currentStep.placeholder}
+              className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-lg font-medium placeholder:text-gray-400 transition-all duration-200"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter') handleNext() }}
+            />
+            {error && (
+              <p className="mt-2 text-sm text-red-600 flex items-center gap-1.5" role="alert">
+                <AlertCircle className="w-4 h-4" />
+                {error}
+              </p>
+            )}
+          </div>
         )}
 
         {currentStep.type === 'select' && (
@@ -305,10 +338,10 @@ export default function OnboardingPage() {
                 <button
                   key={option}
                   onClick={() => updateField(currentStep.key as keyof ProfileData, option)}
-                  className={`px-4 py-3 rounded-lg border text-left text-lg transition ${
+                  className={`px-5 py-4 rounded-2xl border-2 text-left text-lg font-medium transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 ${
                     selected
-                      ? 'border-green-600 bg-green-50 text-green-800'
-                      : 'border-gray-300 hover:border-gray-400'
+                      ? 'border-green-500 bg-green-50 text-green-900 shadow-md shadow-green-500/20'
+                      : 'border-gray-200 text-gray-700 hover:border-gray-300 bg-white'
                   }`}
                 >
                   {option}
@@ -321,7 +354,7 @@ export default function OnboardingPage() {
         {currentStep.type === 'optional' && (
           <div className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Your target audience in one sentence
               </label>
               <input
@@ -329,11 +362,11 @@ export default function OnboardingPage() {
                 value={data.target_audience}
                 onChange={(e) => updateField('target_audience', e.target.value)}
                 placeholder="e.g., Busy moms who want to get strong"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Words or phrases you love to use
               </label>
               <input
@@ -341,11 +374,11 @@ export default function OnboardingPage() {
                 value={data.preferred_words}
                 onChange={(e) => updateField('preferred_words', e.target.value)}
                 placeholder="e.g., transform, unleash, crush it"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Words or phrases you avoid
               </label>
               <input
@@ -353,11 +386,11 @@ export default function OnboardingPage() {
                 value={data.avoided_words}
                 onChange={(e) => updateField('avoided_words', e.target.value)}
                 placeholder="e.g., just, very, amazing"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Paste 1-3 of your best Instagram captions
               </label>
               <textarea
@@ -365,15 +398,18 @@ export default function OnboardingPage() {
                 onChange={(e) => updateField('example_posts', e.target.value)}
                 placeholder="Paste captions here, separated by a blank line..."
                 rows={6}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all resize-none"
               />
             </div>
           </div>
         )}
 
-        {/* Error */}
-        {error && (
-          <p className="text-sm text-red-600 mt-3" role="alert">{error}</p>
+        {/* Error for non-text steps */}
+        {error && currentStep.type !== 'text' && (
+          <p className="text-sm text-red-600 mt-3 flex items-center gap-1.5" role="alert">
+            <AlertCircle className="w-4 h-4" />
+            {error}
+          </p>
         )}
 
         {/* Navigation */}
@@ -382,7 +418,7 @@ export default function OnboardingPage() {
             {step > 0 && (
               <button
                 onClick={handleBack}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition"
+                className="px-4 py-2.5 text-gray-600 hover:text-gray-800 font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 rounded-lg"
               >
                 Back
               </button>
@@ -392,7 +428,7 @@ export default function OnboardingPage() {
             <button
               onClick={handleSkip}
               disabled={saving}
-              className="px-4 py-2 text-gray-500 hover:text-gray-700 text-sm transition"
+              className="px-4 py-2.5 text-gray-500 hover:text-gray-700 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 rounded-lg"
             >
               Skip for now
             </button>
@@ -400,14 +436,14 @@ export default function OnboardingPage() {
               <button
                 onClick={handleFinish}
                 disabled={saving}
-                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50"
+                className="px-6 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-200 disabled:opacity-50 font-semibold shadow-md hover:shadow-lg active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
               >
                 {saving ? 'Saving...' : 'Finish'}
               </button>
             ) : (
               <button
                 onClick={handleNext}
-                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+                className="px-6 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-200 font-semibold shadow-md hover:shadow-lg active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
               >
                 Next
               </button>
@@ -422,36 +458,51 @@ export default function OnboardingPage() {
 function InstagramPreview({ content, error }: { content: string; error?: string }) {
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
-        <p className="text-red-600 mb-2">Couldn't generate sample</p>
-        <p className="text-sm text-red-500">{error}</p>
+      <div className="bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-300 rounded-3xl p-8 text-center shadow-lg">
+        <div className="w-12 h-12 bg-red-200 rounded-full flex items-center justify-center mx-auto mb-4">
+          <AlertCircle className="w-6 h-6 text-red-600" />
+        </div>
+        <p className="text-lg font-semibold text-red-900 mb-2">Couldn't generate sample</p>
+        <p className="text-sm text-red-700">{error}</p>
       </div>
     )
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-      {/* IG header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 p-0.5">
+    <div className="bg-white border-2 border-gray-300 rounded-3xl shadow-2xl overflow-hidden">
+      {/* IG Header */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 bg-white">
+        <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 p-0.5 shadow-sm">
           <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
             <span className="text-xs font-bold text-gray-700">You</span>
           </div>
         </div>
-        <span className="font-semibold text-sm">your_handle</span>
+        <div>
+          <span className="font-semibold text-sm text-gray-900">your_handle</span>
+          <p className="text-xs text-gray-500">Fitness Coach</p>
+        </div>
       </div>
 
-      {/* IG image placeholder */}
-      <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
-        <span className="text-gray-400 text-sm">Your image here</span>
+      {/* IG Image Placeholder */}
+      <div className="aspect-square bg-gradient-to-br from-gray-100 via-gray-200 to-gray-100 flex items-center justify-center relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-t from-black/5 to-transparent" />
+        <span className="text-gray-400 text-sm font-medium relative">Your image here</span>
       </div>
 
-      {/* IG caption */}
-      <div className="px-4 py-3">
-        <p className="text-sm whitespace-pre-wrap">
-          <span className="font-semibold mr-1">your_handle</span>
+      {/* IG Caption */}
+      <div className="px-4 py-3.5">
+        <p className="text-sm leading-relaxed text-gray-800 whitespace-pre-wrap">
+          <span className="font-semibold text-gray-900">your_handle</span>
+          {' '}
           {content}
         </p>
+
+        {/* Like/comment hints */}
+        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-100 text-gray-500">
+          <Heart className="w-5 h-5" />
+          <MessageCircle className="w-5 h-5" />
+          <Send className="w-5 h-5" />
+        </div>
       </div>
     </div>
   )

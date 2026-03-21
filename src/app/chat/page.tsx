@@ -1,10 +1,12 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { X, AlertCircle } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { MessageBubble, type Message } from '@/components/chat/MessageBubble'
 import { ChatInput } from '@/components/chat/ChatInput'
 import { QuickActions } from '@/components/chat/QuickActions'
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { createClient } from '@/lib/supabase/client'
 
 export default function ChatPage() {
@@ -156,32 +158,53 @@ export default function ChatPage() {
     <AppShell isAdmin={isAdmin}>
       <div className="flex flex-col h-screen lg:h-screen">
         {/* Header */}
-        <header className="flex-shrink-0 px-4 py-3 bg-white border-b border-gray-200">
-          <h1 className="text-lg font-semibold text-gray-900">Chat with Juno</h1>
-          <p className="text-sm text-gray-500">Your AI content assistant</p>
+        <header className="flex-shrink-0 px-4 sm:px-5 py-4 bg-white border-b border-gray-100 sticky top-0 z-10">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-bold text-gray-900 tracking-tight">Chat with Juno</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Your AI content assistant</p>
+            </div>
+            {/* Status indicator */}
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-green-50 rounded-full border border-green-200">
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-xs font-medium text-green-700">Ready</span>
+            </div>
+          </div>
         </header>
 
         {/* Quick Actions */}
         <QuickActions onAction={sendMessage} disabled={isLoading} />
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4">
           {isLoadingHistory ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-gray-500">Loading messages...</div>
+            <div className="flex flex-col items-center justify-center h-full">
+              <LoadingSpinner size="lg" />
+              <p className="mt-4 text-gray-500">Loading messages...</p>
             </div>
           ) : messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
-                <span className="text-2xl font-bold text-green-600">J</span>
+            <div className="flex flex-col items-center justify-center h-full text-center px-4">
+              {/* Enhanced empty state */}
+              <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center mb-6 shadow-lg shadow-green-500/20">
+                <span className="text-3xl font-bold text-white">J</span>
               </div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-2">
-                Ready to create content
+
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Ready to create?
               </h2>
-              <p className="text-gray-500 max-w-sm">
-                Ask me anything about your Instagram content, or use the quick
-                actions above to get started.
+              <p className="text-gray-600 max-w-sm mb-8">
+                I'm Juno, your AI content assistant. Ask me anything about your Instagram strategy, or try one of the quick actions above.
               </p>
+
+              {/* Visual hint cards */}
+              <div className="grid grid-cols-1 gap-3 w-full max-w-sm">
+                <div className="p-4 bg-green-50 rounded-xl border border-green-200">
+                  <p className="text-sm font-medium text-green-900">💡 Try asking me to plan your week</p>
+                </div>
+                <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
+                  <p className="text-sm font-medium text-blue-900">✨ Or get fresh content ideas</p>
+                </div>
+              </div>
             </div>
           ) : (
             <>
@@ -193,10 +216,19 @@ export default function ChatPage() {
                 />
               ))}
               {error && (
-                <div className="flex justify-center mb-4">
-                  <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2 text-sm text-red-600">
-                    {error}
+                <div className="flex items-start gap-3 mb-4 p-4 bg-red-50 border-l-4 border-red-500 rounded-r-lg">
+                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-medium text-red-900">{error}</p>
+                    <p className="text-sm text-red-700 mt-1">Try your message again or refresh the page</p>
                   </div>
+                  <button
+                    onClick={() => setError(null)}
+                    className="text-red-600 hover:text-red-800 transition p-1"
+                    aria-label="Dismiss error"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
               )}
               <div ref={messagesEndRef} />

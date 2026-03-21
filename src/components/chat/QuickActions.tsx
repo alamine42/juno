@@ -27,21 +27,29 @@ const QUICK_ACTIONS = [
 
 export function QuickActions({ onAction, disabled = false }: QuickActionsProps) {
   return (
-    <div className="flex flex-wrap gap-2 px-4 py-3 bg-gray-50 border-b border-gray-200">
-      {QUICK_ACTIONS.map((action) => {
-        const Icon = action.icon
-        return (
-          <button
-            key={action.label}
-            onClick={() => onAction(action.prompt)}
-            disabled={disabled}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-green-500"
-          >
-            <Icon className="w-4 h-4" />
-            {action.label}
-          </button>
-        )
-      })}
+    <div className="px-4 sm:px-5 py-4 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+        Quick Actions
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+        {QUICK_ACTIONS.map((action) => {
+          const Icon = action.icon
+          return (
+            <button
+              key={action.label}
+              onClick={() => onAction(action.prompt)}
+              disabled={disabled}
+              className="group relative overflow-hidden px-4 py-3 rounded-xl text-sm font-medium bg-white border border-gray-200 text-gray-700 hover:border-green-400 hover:bg-green-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
+            >
+              <div className="flex items-center gap-2 justify-center">
+                <Icon className="w-4 h-4 text-gray-500 group-hover:text-green-600 transition-colors" />
+                <span>{action.label}</span>
+              </div>
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
