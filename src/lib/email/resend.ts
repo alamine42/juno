@@ -1,6 +1,7 @@
 import { Resend } from 'resend'
+import { RESEND_API_KEY, NEXT_PUBLIC_APP_URL } from '@/lib/env'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+const resend = new Resend(RESEND_API_KEY)
 
 /**
  * HTML-escape a string to prevent XSS in email templates.
@@ -49,7 +50,7 @@ export async function sendPostingReminder(
   contentPreview: string,
   contentId: string
 ) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  const appUrl = NEXT_PUBLIC_APP_URL
 
   // Escape user-supplied content to prevent XSS
   const safeCoachName = escapeHtml(coachName || 'there')

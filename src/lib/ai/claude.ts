@@ -1,10 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
-
-// Use environment variable for model, with fallback to a known good model
-const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514'
+import { ANTHROPIC_API_KEY, CLAUDE_MODEL } from '@/lib/env'
 
 const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
+  apiKey: ANTHROPIC_API_KEY,
 })
 
 export interface BrandProfile {
