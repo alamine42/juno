@@ -22,11 +22,11 @@ export default function ChatPage() {
   useEffect(() => {
     async function loadHistory() {
       try {
-        const { data: history, error: historyError } = await supabase
-          .from('chat_messages')
+        const { data: history, error: historyError } = await (supabase
+          .from('chat_messages') as any)
           .select('id, role, content, content_id')
           .order('created_at', { ascending: true })
-          .limit(50)
+          .limit(50) as { data: { id: string; role: string; content: string; content_id: string | null }[] | null; error: Error | null }
 
         if (historyError) throw historyError
 

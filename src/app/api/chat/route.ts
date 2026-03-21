@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
       .order('created_at', { ascending: true })
       .limit(HISTORY_LIMIT)
 
-    const history = chatHistory?.map(msg => ({
+    const history = (chatHistory as { role: string; content: string }[] | null)?.map(msg => ({
       role: msg.role as 'user' | 'assistant',
       content: msg.content,
     })) ?? []
@@ -119,22 +119,22 @@ export async function POST(request: NextRequest) {
     }
 
     // Persist user message
-    await supabase.from('chat_messages').insert({
+    await (supabase.from('chat_messages') as any).insert({
       coach_id: user.id,
       role: 'user',
       content: message,
     })
 
     // Persist assistant message
-    const { data: assistantMessage } = await supabase
-      .from('chat_messages')
+    const { data: assistantMessage } = await (supabase
+      .from('chat_messages') as any)
       .insert({
         coach_id: user.id,
         role: 'assistant',
         content: result.content,
       })
       .select('id')
-      .single()
+      .single() as { data: { id: string } | null }
 
     // Detect if response contains postable content and save as draft
     // Simple heuristic: if the response is longer than 100 chars and doesn't start with a question
@@ -147,8 +147,8 @@ export async function POST(request: NextRequest) {
       !result.content.toLowerCase().startsWith('would you ')
 
     if (isPostableContent) {
-      const { data: content } = await supabase
-        .from('content')
+      const { data: contentData } = await (supabase
+        .from('content') as any)
         .insert({
           coach_id: user.id,
           type: 'instagram_post',
@@ -156,14 +156,14 @@ export async function POST(request: NextRequest) {
           body: result.content,
         })
         .select('id')
-        .single()
+        .single() as { data: { id: string } | null }
 
-      contentId = content?.id
+      contentId = contentData?.id
 
       // Link content to the assistant message
       if (contentId && assistantMessage?.id) {
-        await supabase
-          .from('chat_messages')
+        await (supabase
+          .from('chat_messages') as any)
           .update({ content_id: contentId })
           .eq('id', assistantMessage.id)
       }

@@ -94,11 +94,11 @@ export async function updateSession(request: NextRequest) {
   // Check onboarding status for authenticated users on protected routes
   // (except onboarding itself)
   if (isProtectedRoute && !pathname.startsWith('/onboarding')) {
-    const { data: brandProfile } = await supabase
-      .from('brand_profiles')
+    const { data: brandProfile } = await (supabase
+      .from('brand_profiles') as any)
       .select('completed_at, skipped_count')
       .eq('coach_id', user.id)
-      .single()
+      .single() as { data: { completed_at: string | null; skipped_count: number } | null }
 
     // Redirect to onboarding if:
     // - No brand profile exists, OR
