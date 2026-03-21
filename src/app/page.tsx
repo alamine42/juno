@@ -1,6 +1,17 @@
+import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/server'
 
-export default function Home() {
+export default async function Home() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // Authenticated users go to chat
+  if (user) {
+    redirect('/chat')
+  }
+
+  // Unauthenticated users see the landing page
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-6 md:p-24">
       <div className="text-center max-w-md">

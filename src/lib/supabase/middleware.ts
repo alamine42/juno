@@ -1,12 +1,22 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import type { Database } from '@/types/database'
+
+// Routes that require authentication
+const PROTECTED_ROUTES = ['/chat', '/drafts', '/onboarding', '/settings']
+
+// Routes that require admin access
+const ADMIN_ROUTES = ['/admin']
+
+// API routes that should return 401 JSON instead of redirect
+const API_PREFIX = '/api/'
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   })
 
-  const supabase = createServerClient(
+  const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -34,16 +44,74 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Protected routes
-  const protectedRoutes = ['/chat', '/onboarding', '/settings']
-  const isProtectedRoute = protectedRoutes.some((route) =>
-    request.nextUrl.pathname.startsWith(route)
+  const pathname = request.nextUrl.pathname
+
+  // Check if this is an API route
+  const isApiRoute = pathname.startsWith(API_PREFIX)
+
+  // Check if this is a protected route
+  const isProtectedRoute = PROTECTED_ROUTES.some((route) =>
+    pathname.startsWith(route)
   )
 
-  if (isProtectedRoute && !user) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/auth/login'
-    return NextResponse.redirect(url)
+  // Check if this is an admin route
+  const isAdminRoute = ADMIN_ROUTES.some((route) =>
+    pathname.startsWith(route)
+  )
+
+  // Handle unauthenticated users
+  if (!user) {
+    if (isApiRoute) {
+      // Return 401 JSON for API routes
+      return NextResponse.json(
+        { error: 'Unauthorized', message: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    if (isProtectedRoute || isAdminRoute) {
+      // Redirect to login for protected routes
+      const url = request.nextUrl.clone()
+      url.pathname = '/auth/login'
+      url.searchParams.set('redirect', pathname)
+      return NextResponse.redirect(url)
+    }
+
+    return supabaseResponse
+  }
+
+  // User is authenticated - check admin access
+  if (isAdminRoute) {
+    const adminEmail = process.env.ADMIN_EMAIL
+    if (!adminEmail || user.email !== adminEmail) {
+      // Not an admin - redirect to chat
+      const url = request.nextUrl.clone()
+      url.pathname = '/chat'
+      return NextResponse.redirect(url)
+    }
+  }
+
+  // Check onboarding status for authenticated users on protected routes
+  // (except onboarding itself)
+  if (isProtectedRoute && !pathname.startsWith('/onboarding')) {
+    const { data: brandProfile } = await supabase
+      .from('brand_profiles')
+      .select('completed_at, skipped_count')
+      .eq('coach_id', user.id)
+      .single()
+
+    // Redirect to onboarding if:
+    // - No brand profile exists, OR
+    // - Brand profile not completed AND not skipped
+    const needsOnboarding =
+      !brandProfile ||
+      (!brandProfile.completed_at && (brandProfile.skipped_count || 0) === 0)
+
+    if (needsOnboarding) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/onboarding'
+      return NextResponse.redirect(url)
+    }
   }
 
   return supabaseResponse
