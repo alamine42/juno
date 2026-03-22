@@ -32,12 +32,12 @@ async function getRecentFrameworkUsage(
   since.setDate(since.getDate() - days)
 
   // Query content table for framework_id usage
-  const { data, error } = await supabase
-    .from('content')
+  const { data, error } = await (supabase
+    .from('content') as any)
     .select('framework_id')
     .eq('coach_id', coachId)
     .gte('created_at', since.toISOString())
-    .not('framework_id', 'is', null)
+    .not('framework_id', 'is', null) as { data: { framework_id: string | null }[] | null; error: Error | null }
 
   if (error || !data) {
     return {}

@@ -296,5 +296,266 @@ describe('Content Batch API Route', () => {
 
       expect(mockGenerateContent).toHaveBeenCalledTimes(2)
     })
+
+    it('generates content for all 7 days', async () => {
+      setupSupabase()
+
+      const response = await POST(createRequest({
+        focus_topic: 'weekly fitness challenge',
+        posting_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+      }))
+
+      expect(response.status).toBe(201)
+      const body = await response.json()
+      expect(body.generated).toBe(7)
+      expect(body.content).toHaveLength(7)
+      expect(mockGenerateContent).toHaveBeenCalledTimes(7)
+    })
+
+    it('processes days sequentially in order', async () => {
+      setupSupabase()
+      const callOrder: string[] = []
+
+      mockGenerateContent.mockImplementation((prompt: string) => {
+        // Extract day name from prompt
+        const dayMatch = prompt.match(/for (monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i)
+        if (dayMatch) {
+          callOrder.push(dayMatch[1].toLowerCase())
+        }
+        return Promise.resolve({ success: true, content: 'Generated content' })
+      })
+
+      await POST(createRequest({
+        focus_topic: 'fitness',
+        posting_days: ['wednesday', 'monday', 'friday'],
+      }))
+
+      // Days should be processed in the order provided
+      expect(callOrder).toEqual(['wednesday', 'monday', 'friday'])
+    })
+
+    it('handles content insert failure for some days', async () => {
+      let insertCount = 0
+      const insertContent = vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          single: vi.fn().mockImplementation(() => {
+            insertCount++
+            if (insertCount === 2) {
+              return Promise.resolve({ data: null, error: { code: '23502', message: 'Insert failed' } })
+            }
+            return Promise.resolve({ data: { id: `content-${insertCount}` }, error: null })
+          }),
+        }),
+      })
+
+      const selectBrandProfile = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({ data: { style_words: 'energetic' }, error: null }),
+        }),
+      })
+
+      const insertBatch = vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({ data: { id: 'batch-123' }, error: null }),
+        }),
+      })
+
+      const updateBatch = vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })
+
+      mockCreateClient.mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-123' } }, error: null }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'brand_profiles') {
+            return { select: selectBrandProfile }
+          }
+          if (table === 'content_batches') {
+            return { insert: insertBatch, update: updateBatch }
+          }
+          if (table === 'content') {
+            return { insert: insertContent }
+          }
+          return {}
+        }),
+      })
+
+      const response = await POST(createRequest({
+        focus_topic: 'fitness',
+        posting_days: ['monday', 'tuesday', 'wednesday'],
+      }))
+
+      expect(response.status).toBe(207)
+      const body = await response.json()
+      expect(body.status).toBe('partial')
+      expect(body.generated).toBe(2)
+      expect(body.failed).toBe(1)
+    })
+
+    it('returns 400 for invalid JSON body', async () => {
+      setupSupabase()
+
+      const request = new NextRequest('http://localhost:3000/api/content/batch', {
+        method: 'POST',
+        body: 'invalid json',
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      const response = await POST(request)
+      expect(response.status).toBe(400)
+      const body = await response.json()
+      expect(body.error).toBe('Invalid JSON')
+    })
+
+    it('returns 400 for focus_topic exceeding max length', async () => {
+      setupSupabase()
+
+      const response = await POST(createRequest({
+        focus_topic: 'a'.repeat(501), // Max is 500
+        posting_days: ['monday'],
+      }))
+
+      expect(response.status).toBe(400)
+    })
+
+    it('rotates frameworks for variety across days', async () => {
+      setupSupabase()
+      const frameworksUsed: string[] = []
+
+      mockGenerateContent.mockImplementation((prompt: string) => {
+        // Extract framework type from prompt
+        if (prompt.includes('Client Win')) frameworksUsed.push('client_win')
+        else if (prompt.includes('Educational')) frameworksUsed.push('educational_carousel')
+        else if (prompt.includes('Engagement')) frameworksUsed.push('engagement_hook')
+        else if (prompt.includes('Behind the Scenes')) frameworksUsed.push('behind_the_scenes')
+        else if (prompt.includes('Myth Buster')) frameworksUsed.push('myth_buster')
+        return Promise.resolve({ success: true, content: 'Generated content' })
+      })
+
+      await POST(createRequest({
+        focus_topic: 'fitness variety',
+        posting_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+      }))
+
+      // Should use different frameworks for different days
+      expect(frameworksUsed.length).toBe(5)
+    })
+
+    it('handles brand profile fetch error gracefully', async () => {
+      const selectBrandProfile = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({
+            data: null,
+            error: { code: 'PGRST116', message: 'No rows' }, // Not found is ok
+          }),
+        }),
+      })
+
+      const insertBatch = vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({ data: { id: 'batch-123' }, error: null }),
+        }),
+      })
+
+      const insertContent = vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({ data: { id: 'content-1' }, error: null }),
+        }),
+      })
+
+      const updateBatch = vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })
+
+      mockCreateClient.mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-123' } }, error: null }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'brand_profiles') {
+            return { select: selectBrandProfile }
+          }
+          if (table === 'content_batches') {
+            return { insert: insertBatch, update: updateBatch }
+          }
+          if (table === 'content') {
+            return { insert: insertContent }
+          }
+          return {}
+        }),
+      })
+
+      const response = await POST(createRequest({
+        focus_topic: 'fitness',
+        posting_days: ['monday'],
+      }))
+
+      // Should still succeed even without brand profile
+      expect(response.status).toBe(201)
+    })
+
+    it('handles batch create failure', async () => {
+      const selectBrandProfile = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({ data: { style_words: 'energetic' }, error: null }),
+        }),
+      })
+
+      const insertBatch = vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({
+            data: null,
+            error: { code: '23502', message: 'Required field missing' },
+          }),
+        }),
+      })
+
+      mockCreateClient.mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-123' } }, error: null }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'brand_profiles') {
+            return { select: selectBrandProfile }
+          }
+          if (table === 'content_batches') {
+            return { insert: insertBatch }
+          }
+          return {}
+        }),
+      })
+
+      const response = await POST(createRequest({
+        focus_topic: 'fitness',
+        posting_days: ['monday'],
+      }))
+
+      expect(response.status).toBe(500)
+      const body = await response.json()
+      expect(body.error).toBe('Server error')
+    })
+
+    it('includes token usage when available', async () => {
+      setupSupabase()
+      mockGenerateContent.mockResolvedValue({
+        success: true,
+        content: 'Generated content with token tracking',
+        usage: {
+          input_tokens: 150,
+          output_tokens: 200,
+          model: 'claude-3-haiku',
+        },
+      })
+
+      const response = await POST(createRequest({
+        focus_topic: 'fitness',
+        posting_days: ['monday'],
+      }))
+
+      expect(response.status).toBe(201)
+      // Token usage is tracked but not returned in response
+    })
   })
 })

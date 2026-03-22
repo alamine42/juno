@@ -42,7 +42,7 @@ export async function trackContentEvent(event: ContentEvent): Promise<void> {
   try {
     const supabase = await createClient()
 
-    const { error } = await supabase.from('content_interactions').insert({
+    const { error } = await (supabase.from('content_interactions') as any).insert({
       coach_id: event.coach_id,
       content_id: event.content_id ?? null,
       event_type: event.event_type,
@@ -163,12 +163,12 @@ export async function getFrameworkUsage(
     const since = new Date()
     since.setDate(since.getDate() - days)
 
-    const { data, error } = await supabase
-      .from('content_interactions')
+    const { data, error } = await (supabase
+      .from('content_interactions') as any)
       .select('metadata')
       .eq('coach_id', coachId)
       .eq('event_type', 'generated')
-      .gte('created_at', since.toISOString())
+      .gte('created_at', since.toISOString()) as { data: { metadata: TrackingMetadata }[] | null; error: Error | null }
 
     if (error || !data) {
       return {}
@@ -176,7 +176,7 @@ export async function getFrameworkUsage(
 
     const usage: Record<string, number> = {}
     for (const row of data) {
-      const frameworkId = (row.metadata as TrackingMetadata)?.framework_id
+      const frameworkId = row.metadata?.framework_id
       if (frameworkId) {
         usage[frameworkId] = (usage[frameworkId] || 0) + 1
       }
