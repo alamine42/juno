@@ -9,9 +9,16 @@ const anthropic = new Anthropic({
 // Re-export for backwards compatibility
 export type { BrandProfileForPrompt as BrandProfile }
 
+export interface TokenUsage {
+  input_tokens: number
+  output_tokens: number
+  model: string
+}
+
 export interface GenerationResult {
   success: true
   content: string
+  usage?: TokenUsage
 }
 
 // Multi-format content types
@@ -61,7 +68,16 @@ export async function generateContent(
     const textBlock = response.content.find((block) => block.type === 'text')
     const content = textBlock?.type === 'text' ? textBlock.text : ''
 
-    return { success: true, content }
+    // Extract token usage for logging/tracking
+    const usage: TokenUsage | undefined = response.usage
+      ? {
+          input_tokens: response.usage.input_tokens,
+          output_tokens: response.usage.output_tokens,
+          model: CLAUDE_MODEL,
+        }
+      : undefined
+
+    return { success: true, content, usage }
   } catch (err) {
     // Log error without leaking the prompt
     const error = err as Error & { status?: number; code?: string }
