@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ArrowLeft, ArrowRight, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -10,12 +10,22 @@ interface FrameworkFormProps {
   framework: Framework
   onSubmit: (answers: Record<string, string>) => void
   onCancel: () => void
+  isSubmitting?: boolean
 }
 
-export function FrameworkForm({ framework, onSubmit, onCancel }: FrameworkFormProps) {
+const MAX_ANSWER_LENGTH = 500
+
+export function FrameworkForm({ framework, onSubmit, onCancel, isSubmitting = false }: FrameworkFormProps) {
   const [step, setStep] = useState(0)
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
+
+  // Reset state when framework changes
+  useEffect(() => {
+    setStep(0)
+    setAnswers({})
+    setError('')
+  }, [framework.id])
 
   const questions = framework.questions
   const currentQuestion = questions[step]
@@ -28,15 +38,26 @@ export function FrameworkForm({ framework, onSubmit, onCancel }: FrameworkFormPr
   }
 
   function handleNext() {
+    if (isSubmitting) return
+
     const value = answers[currentQuestion.key]?.trim()
     if (!value) {
       setError('This field is required')
       return
     }
+    if (value.length > MAX_ANSWER_LENGTH) {
+      setError(`Answer too long. Maximum ${MAX_ANSWER_LENGTH} characters.`)
+      return
+    }
     setError('')
 
+    // Trim answers before submission to enforce length limits
+    const trimmedAnswers = Object.fromEntries(
+      Object.entries(answers).map(([k, v]) => [k, v.trim()])
+    )
+
     if (isLastStep) {
-      onSubmit(answers)
+      onSubmit(trimmedAnswers)
     } else {
       setStep((s) => s + 1)
     }
@@ -80,7 +101,14 @@ export function FrameworkForm({ framework, onSubmit, onCancel }: FrameworkFormPr
       </div>
 
       {/* Progress bar */}
-      <div className="h-1 bg-gray-100">
+      <div
+        className="h-1.5 bg-gray-100"
+        role="progressbar"
+        aria-valuenow={step + 1}
+        aria-valuemin={1}
+        aria-valuemax={questions.length}
+        aria-label={`Question ${step + 1} of ${questions.length}`}
+      >
         <div
           className="h-full bg-green-500 transition-all duration-300 ease-out"
           style={{ width: `${progress}%` }}
@@ -113,6 +141,8 @@ export function FrameworkForm({ framework, onSubmit, onCancel }: FrameworkFormPr
           variant="primary"
           onClick={handleNext}
           className="flex-1"
+          disabled={isSubmitting}
+          loading={isSubmitting && isLastStep}
         >
           {isLastStep ? 'Generate' : 'Next'}
           {!isLastStep && <ArrowRight className="w-4 h-4 ml-1" />}

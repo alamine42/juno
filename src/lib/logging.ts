@@ -3,9 +3,22 @@
  * Uses JSON format for Vercel log ingestion.
  */
 
-// Cost per 1M tokens (as of 2024, Claude 3.5 Sonnet)
-const COST_PER_1M_INPUT_TOKENS = 3.0
-const COST_PER_1M_OUTPUT_TOKENS = 15.0
+// Cost per 1M tokens (Claude models pricing)
+const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  // Sonnet models
+  'claude-sonnet-4-20250514': { input: 3.0, output: 15.0 },
+  'claude-3-5-sonnet-20241022': { input: 3.0, output: 15.0 },
+  'claude-3-5-sonnet-latest': { input: 3.0, output: 15.0 },
+  'claude-sonnet-latest': { input: 3.0, output: 15.0 },
+  // Haiku models
+  'claude-3-haiku-20240307': { input: 0.25, output: 1.25 },
+  'claude-3-5-haiku-latest': { input: 0.8, output: 4.0 },
+  'claude-haiku-latest': { input: 0.8, output: 4.0 },
+  // Opus models
+  'claude-3-opus-20240229': { input: 15.0, output: 75.0 },
+  'claude-opus-latest': { input: 15.0, output: 75.0 },
+}
+const DEFAULT_PRICING = { input: 3.0, output: 15.0 }
 
 export interface LogContext {
   event: string
@@ -38,10 +51,18 @@ export interface GenerationLogContext extends LogContext {
 
 /**
  * Calculate estimated cost from token usage.
+ * Uses model-aware pricing with fallback to default rates.
  */
 export function calculateCost(usage: TokenUsage): number {
-  const inputCost = (usage.input_tokens / 1_000_000) * COST_PER_1M_INPUT_TOKENS
-  const outputCost = (usage.output_tokens / 1_000_000) * COST_PER_1M_OUTPUT_TOKENS
+  // Validate token counts
+  const inputTokens = Math.max(0, usage.input_tokens)
+  const outputTokens = Math.max(0, usage.output_tokens)
+
+  // Get model-specific pricing or fallback
+  const pricing = MODEL_PRICING[usage.model] ?? DEFAULT_PRICING
+
+  const inputCost = (inputTokens / 1_000_000) * pricing.input
+  const outputCost = (outputTokens / 1_000_000) * pricing.output
   return Math.round((inputCost + outputCost) * 1_000_000) / 1_000_000 // Round to 6 decimal places
 }
 

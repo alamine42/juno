@@ -86,7 +86,7 @@ describe('suggestions', () => {
       expect(['behind_the_scenes', 'myth_buster']).toContain(suggestion.framework.id)
     })
 
-    it('handles no previous content', async () => {
+    it('handles no previous content this week', async () => {
       setupMocks({
         contentData: [],
         brandProfile: null,
@@ -96,7 +96,8 @@ describe('suggestions', () => {
 
       // Should suggest first framework by display_order when all have 0 usage
       expect(suggestion.framework).toBeDefined()
-      expect(suggestion.reason).toContain("haven't used")
+      expect(suggestion.isNewThisWeek).toBe(true)
+      expect(suggestion.reason).toContain('this week')
     })
 
     it('includes reason based on usage count', async () => {

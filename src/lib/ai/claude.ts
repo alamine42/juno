@@ -68,6 +68,15 @@ export async function generateContent(
     const textBlock = response.content.find((block) => block.type === 'text')
     const content = textBlock?.type === 'text' ? textBlock.text : ''
 
+    // Check for empty content (safety refusal, tool output, etc.)
+    if (!content) {
+      return {
+        success: false,
+        error: 'Unable to generate content. Please try rephrasing your request.',
+        code: 'api_error',
+      }
+    }
+
     // Extract token usage for logging/tracking
     const usage: TokenUsage | undefined = response.usage
       ? {
@@ -120,6 +129,13 @@ export async function generateContent(
   }
 }
 
+// Format-specific constraints
+const FORMAT_CONSTRAINTS = {
+  caption: { maxLength: 2200, name: 'Caption' },
+  carousel: { maxLength: 2200, name: 'Carousel' },
+  reel: { maxLength: 500, name: 'Reel script' },
+} as const
+
 /**
  * Extract content from XML-tagged multi-format response.
  * Expects tags: <caption>...</caption>, <carousel>...</carousel>, <reel>...</reel>
@@ -158,10 +174,16 @@ export function parseMultiFormatResponse(text: string): MultiFormatResult {
     warnings.push(`Missing formats: ${missing.join(', ')}`)
   }
 
-  // Check for empty content within tags
+  // Check for empty content and validate lengths
   for (const format of foundFormats) {
-    if (!formats[format] || formats[format]!.length === 0) {
+    const content = formats[format]
+    const constraint = FORMAT_CONSTRAINTS[format]
+
+    if (!content || content.length === 0) {
       warnings.push(`Empty content in <${format}> tag`)
+      delete formats[format]
+    } else if (content.length > constraint.maxLength) {
+      warnings.push(`${constraint.name} exceeds ${constraint.maxLength} characters - content removed`)
       delete formats[format]
     }
   }

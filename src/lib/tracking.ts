@@ -18,7 +18,11 @@ export interface TrackingMetadata {
   framework_id?: string
   format_copied?: 'caption' | 'carousel' | 'reel'
   refinement_type?: 'shorter' | 'longer' | 'casual' | 'professional' | 'spicy'
+  skip_reason?: 'quality' | 'tone' | 'length' | 'topic' | 'other'
   source?: 'chat' | 'batch' | 'framework'
+  input_tokens?: number
+  output_tokens?: number
+  model?: string
   [key: string]: unknown
 }
 
@@ -117,11 +121,16 @@ export async function trackConfirmed(coachId: string, contentId: string): Promis
 /**
  * Track content skip.
  */
-export async function trackSkipped(coachId: string, contentId?: string): Promise<void> {
+export async function trackSkipped(
+  coachId: string,
+  contentId?: string,
+  reason?: 'quality' | 'tone' | 'length' | 'topic' | 'other'
+): Promise<void> {
   return trackContentEvent({
     coach_id: coachId,
     content_id: contentId,
     event_type: 'skipped',
+    metadata: reason ? { skip_reason: reason } : undefined,
   })
 }
 

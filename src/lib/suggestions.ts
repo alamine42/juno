@@ -10,6 +10,8 @@ export interface ContentSuggestion {
   framework: Framework
   suggestedTopic: string
   reason: string
+  /** True if coach has no framework usage in the past 7 days */
+  isNewThisWeek: boolean
 }
 
 interface BrandProfile {
@@ -156,18 +158,25 @@ export async function suggestContent(coachId: string): Promise<ContentSuggestion
   // Get brand profile for topic personalization
   const profile = await getBrandProfile(coachId)
 
+  // Check if coach has no recent usage (last 7 days)
+  const totalUsage = Object.values(usage).reduce((sum, count) => sum + count, 0)
+  const isNewThisWeek = totalUsage === 0
+
   // Find least-used framework
   const framework = findLeastUsedFramework(usage)
   const usageCount = usage[framework.id] || 0
 
   // Generate topic and reason
   const suggestedTopic = generateTopicForFramework(framework, profile)
-  const reason = generateReason(framework, usageCount)
+  const reason = isNewThisWeek
+    ? `Try ${framework.name} this week - it's great for engaging your audience!`
+    : generateReason(framework, usageCount)
 
   return {
     framework,
     suggestedTopic,
     reason,
+    isNewThisWeek,
   }
 }
 
@@ -193,9 +202,16 @@ export async function getVarietyScore(coachId: string): Promise<number> {
     deviationSum += deviation * deviation
   }
 
+  // Worst case: all posts in one framework
+  // Deviation for that framework: totalPosts - (totalPosts/n) = totalPosts * (n-1)/n
+  // Other frameworks each have deviation of totalPosts/n
+  // Max deviation sum = ((n-1)/n * totalPosts)^2 + (n-1) * (totalPosts/n)^2
+  const worstCaseDeviation =
+    Math.pow((totalPosts * (frameworkCount - 1)) / frameworkCount, 2) +
+    (frameworkCount - 1) * Math.pow(totalPosts / frameworkCount, 2)
+
   // Normalize to 0-100 (lower deviation = higher score)
-  const maxDeviation = totalPosts * totalPosts // Worst case: all posts in one framework
-  const normalizedDeviation = deviationSum / maxDeviation
+  const normalizedDeviation = worstCaseDeviation > 0 ? deviationSum / worstCaseDeviation : 0
   const score = Math.round((1 - normalizedDeviation) * 100)
 
   return Math.max(0, Math.min(100, score))
