@@ -11,12 +11,21 @@ export const maxDuration = 60
 
 const VALID_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
 
+// Per-day customization from the UI
+const dayConfigSchema = z.object({
+  day: z.enum(VALID_DAYS),
+  framework_id: z.string().nullable().optional(),
+  topic: z.string().nullable().optional(),
+})
+
 const batchCreateSchema = z.object({
   focus_topic: z.string().min(1, 'Focus topic is required').max(500),
   posting_days: z.array(z.enum(VALID_DAYS))
     .min(1, 'At least one posting day is required')
     .max(7, 'Maximum 7 posting days allowed'),
   promotion_text: z.string().max(500).optional(),
+  // Optional per-day customizations from the modal UI
+  day_configs: z.array(dayConfigSchema).optional(),
 })
 
 // Helper to add delay between API calls
@@ -105,7 +114,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { focus_topic, posting_days, promotion_text } = parsed.data
+  const { focus_topic, posting_days, promotion_text, day_configs } = parsed.data
 
   // Load brand profile for content generation
   const { data: brandProfile, error: profileError } = await supabase
@@ -151,7 +160,14 @@ export async function POST(request: NextRequest) {
   // Generate content for each posting day sequentially
   for (let i = 0; i < posting_days.length; i++) {
     const day = posting_days[i]
-    const framework = selectFrameworkForDay(i)
+
+    // Use per-day customization if provided, otherwise fall back to rotation
+    const dayConfig = day_configs?.find(c => c.day === day)
+    const customFramework = dayConfig?.framework_id
+      ? FRAMEWORKS.find(f => f.id === dayConfig.framework_id)
+      : null
+    const framework = customFramework || selectFrameworkForDay(i)
+    const customTopic = dayConfig?.topic?.trim()
 
     // Add delay between API calls (except for the first one)
     if (i > 0) {
@@ -159,7 +175,9 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const prompt = buildBatchPrompt(framework, focus_topic, day, promotion_text)
+      // Use custom topic if provided, otherwise use the general focus topic
+      const topicForDay = customTopic || focus_topic
+      const prompt = buildBatchPrompt(framework, topicForDay, day, promotion_text)
 
       const result = await generateContent(
         prompt,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { User, Palette, Bell, LogOut } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { BrandProfileForm } from '@/components/settings/BrandProfileForm'
@@ -24,7 +24,8 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [profile, setProfile] = useState<BrandProfile | null>(null)
   const [coach, setCoach] = useState<Coach | null>(null)
-  const supabase = createClient()
+  // Memoize client to prevent infinite useEffect loop
+  const supabase = useMemo(() => createClient(), [])
 
   // Fetch profile data
   useEffect(() => {

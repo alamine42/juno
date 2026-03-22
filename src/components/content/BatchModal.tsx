@@ -152,6 +152,12 @@ export function BatchModal({ isOpen, onClose, onComplete }: BatchModalProps) {
           focus_topic: focusTopic || 'fitness and wellness content',
           posting_days: batchDays.map((d) => d.day),
           promotion_text: undefined,
+          // Include per-day customizations for the API to use
+          day_configs: batchDays.map((d) => ({
+            day: d.day,
+            framework_id: d.framework?.id || null,
+            topic: d.topic || null,
+          })),
         }),
       })
 

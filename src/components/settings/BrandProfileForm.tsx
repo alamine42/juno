@@ -53,6 +53,24 @@ export function BrandProfileForm({ initialProfile, onSave }: BrandProfileFormPro
   const [errorMessage, setErrorMessage] = useState('')
   const saveTimeoutRef = useRef<NodeJS.Timeout>()
   const debounceRef = useRef<NodeJS.Timeout>()
+  const hasLoadedRef = useRef(false)
+
+  // Sync form data when initialProfile changes (async load from parent)
+  useEffect(() => {
+    if (initialProfile && !hasLoadedRef.current) {
+      setFormData({
+        target_audience: initialProfile.target_audience || '',
+        style_words: initialProfile.style_words || '',
+        tone: initialProfile.tone || '',
+        emoji_usage: initialProfile.emoji_usage || '',
+        sign_off: initialProfile.sign_off || '',
+        avoided_topics: parseArrayToString(initialProfile.avoided_topics),
+        avoided_words: parseArrayToString(initialProfile.avoided_words),
+        preferred_words: parseArrayToString(initialProfile.preferred_words),
+      })
+      hasLoadedRef.current = true
+    }
+  }, [initialProfile])
 
   // Clear status after a delay
   useEffect(() => {
