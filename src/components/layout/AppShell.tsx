@@ -42,6 +42,11 @@ export function AppShell({ children, isAdmin = false }: AppShellProps) {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
+      {/* Skip to main content link - visible on focus for keyboard users */}
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
+
       {/* Desktop Sidebar */}
       <aside
         className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-white border-r border-gray-200"
@@ -96,7 +101,7 @@ export function AppShell({ children, isAdmin = false }: AppShellProps) {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 lg:pl-64 pb-20 lg:pb-0">
+      <main id="main-content" className="flex-1 lg:pl-64 pb-20 lg:pb-0" tabIndex={-1}>
         {children}
       </main>
 

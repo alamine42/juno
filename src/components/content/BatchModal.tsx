@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { X, Calendar, ChevronRight, ChevronLeft, Check, AlertCircle, Loader2, Sparkles, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { FrameworkPicker } from '@/components/frameworks/FrameworkPicker'
 import { FRAMEWORKS, type Framework } from '@/lib/frameworks'
+import { useFocusTrap } from '@/lib/hooks'
 
 interface BatchDay {
   day: string
@@ -40,7 +41,7 @@ export function BatchModal({ isOpen, onClose, onComplete }: BatchModalProps) {
   const [showFrameworkPicker, setShowFrameworkPicker] = useState(false)
   const [error, setError] = useState('')
   const [progress, setProgress] = useState({ current: 0, total: 0 })
-  const modalRef = useRef<HTMLDivElement>(null)
+  const focusTrapRef = useFocusTrap(isOpen && !showFrameworkPicker)
 
   // Reset state when modal opens
   useEffect(() => {
@@ -191,7 +192,7 @@ export function BatchModal({ isOpen, onClose, onComplete }: BatchModalProps) {
 
       {/* Modal */}
       <div
-        ref={modalRef}
+        ref={focusTrapRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="batch-title"

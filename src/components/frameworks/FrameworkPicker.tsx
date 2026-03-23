@@ -3,6 +3,7 @@
 import { useEffect, useCallback } from 'react'
 import { X, FileText, Sparkles, MessageCircle, Camera, Zap, PenLine } from 'lucide-react'
 import { FRAMEWORKS, type Framework } from '@/lib/frameworks'
+import { useFocusTrap } from '@/lib/hooks'
 
 // Framework icons mapping
 const FRAMEWORK_ICONS: Record<string, React.ReactNode> = {
@@ -29,6 +30,8 @@ interface FrameworkPickerProps {
 }
 
 export function FrameworkPicker({ isOpen, onClose, onSelect }: FrameworkPickerProps) {
+  const focusTrapRef = useFocusTrap(isOpen)
+
   // Handle escape key
   const handleEscape = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') onClose()
@@ -68,6 +71,7 @@ export function FrameworkPicker({ isOpen, onClose, onSelect }: FrameworkPickerPr
 
       {/* Bottom sheet (mobile) / Modal (desktop) */}
       <div
+        ref={focusTrapRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="picker-title"

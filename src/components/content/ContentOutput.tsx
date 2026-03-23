@@ -97,13 +97,22 @@ export function ContentOutput({
 
   return (
     <div className={`bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden ${className}`}>
+      {/* Screen reader status announcements */}
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {copyState === 'copied' && 'Content copied to clipboard'}
+        {isRefining && activeRefinement && `Refining content to be ${activeRefinement}`}
+      </div>
+
       {/* Format tabs - Segmented control style */}
       {availableTabs.length > 1 && (
         <div className="p-3 bg-gray-50 border-b border-gray-100">
-          <div className="inline-flex p-1 bg-gray-200/60 rounded-xl">
+          <div role="tablist" aria-label="Content format" className="inline-flex p-1 bg-gray-200/60 rounded-xl">
             {availableTabs.map((tab) => (
               <button
                 key={tab}
+                role="tab"
+                aria-selected={currentTab === tab}
+                aria-controls={`tabpanel-${tab}`}
                 onClick={() => setActiveTab(tab)}
                 className={`relative px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 ${
                   currentTab === tab
@@ -119,7 +128,7 @@ export function ContentOutput({
       )}
 
       {/* Content area */}
-      <div className="p-5">
+      <div className="p-5" role="tabpanel" id={`tabpanel-${currentTab}`} aria-label={`${FORMAT_LABELS[currentTab].label} content`}>
         {/* Content display with elegant styling */}
         <div className="relative group">
           <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-5 min-h-[140px] max-h-[320px] overflow-y-auto border border-gray-100">

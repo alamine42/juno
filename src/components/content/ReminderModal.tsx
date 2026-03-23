@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { X, Clock, AlertCircle, Calendar, Bell } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { useFocusTrap } from '@/lib/hooks'
 
 interface ReminderModalProps {
   isOpen: boolean
@@ -60,7 +61,7 @@ export function ReminderModal({
   const [timeValue, setTimeValue] = useState(formatTimeForInput(defaultDate))
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const modalRef = useRef<HTMLDivElement>(null)
+  const focusTrapRef = useFocusTrap(isOpen)
 
   // Reset form when modal opens
   useEffect(() => {
@@ -72,7 +73,7 @@ export function ReminderModal({
     }
   }, [isOpen, initialDate])
 
-  // Handle escape key and focus trap
+  // Handle escape key
   useEffect(() => {
     function handleEscape(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose()
@@ -81,10 +82,6 @@ export function ReminderModal({
     if (isOpen) {
       document.addEventListener('keydown', handleEscape)
       document.body.style.overflow = 'hidden'
-      // Focus first input
-      setTimeout(() => {
-        modalRef.current?.querySelector('input')?.focus()
-      }, 100)
     }
 
     return () => {
@@ -154,7 +151,7 @@ export function ReminderModal({
 
       {/* Modal */}
       <div
-        ref={modalRef}
+        ref={focusTrapRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="reminder-title"

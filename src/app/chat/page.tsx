@@ -215,7 +215,7 @@ export default function ChatPage() {
             </div>
           ) : (
             <>
-              <div role="list" aria-label="Chat messages">
+              <div role="log" aria-label="Chat messages" aria-live="polite" aria-relevant="additions">
                 {messages.map((message) => (
                   <MessageBubble
                     key={message.id}
@@ -225,8 +225,8 @@ export default function ChatPage() {
                 ))}
               </div>
               {error && (
-                <div className="flex items-start gap-3 mb-4 p-4 bg-red-50 border-l-4 border-red-500 rounded-r-lg">
-                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <div role="alert" aria-live="assertive" className="flex items-start gap-3 mb-4 p-4 bg-red-50 border-l-4 border-red-500 rounded-r-lg">
+                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
                   <div className="flex-1">
                     <p className="font-medium text-red-900">{error}</p>
                     <p className="text-sm text-red-700 mt-1">Try your message again or refresh the page</p>
