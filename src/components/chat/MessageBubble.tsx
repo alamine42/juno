@@ -23,7 +23,7 @@ export function MessageBubble({ message, onSaveDraft }: MessageBubbleProps) {
     <div
       role="listitem"
       aria-label={`${isUser ? 'Your message' : 'Juno message'}${isLoading ? ', loading' : ''}`}
-      className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4 group`}
+      className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4 group fade-slide-in`}
     >
       {/* Juno Avatar */}
       {!isUser && (

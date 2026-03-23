@@ -191,25 +191,25 @@ export default function ChatPage() {
             </div>
           ) : messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-4">
-              {/* Enhanced empty state */}
-              <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center mb-6 shadow-lg shadow-green-500/20">
+              {/* Enhanced empty state with animations */}
+              <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center mb-6 shadow-lg shadow-green-500/25 animate-bob">
                 <span className="text-3xl font-bold text-white">J</span>
               </div>
 
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2 fade-in-only">
                 Ready to create?
               </h2>
-              <p className="text-gray-600 max-w-sm mb-8">
+              <p className="text-gray-600 max-w-sm mb-8 fade-in-only" style={{ animationDelay: '100ms' }}>
                 I'm Juno, your AI content assistant. Ask me anything about your Instagram strategy, or try one of the quick actions above.
               </p>
 
-              {/* Visual hint cards */}
+              {/* Visual hint cards with staggered animation */}
               <div className="grid grid-cols-1 gap-3 w-full max-w-sm">
-                <div className="p-4 bg-green-50 rounded-xl border border-green-200">
-                  <p className="text-sm font-medium text-green-900">💡 Try asking me to plan your week</p>
+                <div className="p-4 bg-green-50 rounded-xl border border-green-200 hover:shadow-md hover:border-green-300 transition-all fade-slide-in" style={{ animationDelay: '200ms' }}>
+                  <p className="text-sm font-medium text-green-900">Try asking me to plan your week</p>
                 </div>
-                <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
-                  <p className="text-sm font-medium text-blue-900">✨ Or get fresh content ideas</p>
+                <div className="p-4 bg-blue-50 rounded-xl border border-blue-200 hover:shadow-md hover:border-blue-300 transition-all fade-slide-in" style={{ animationDelay: '300ms' }}>
+                  <p className="text-sm font-medium text-blue-900">Or get fresh content ideas</p>
                 </div>
               </div>
             </div>
