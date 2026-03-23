@@ -6,7 +6,7 @@ import { AppShell } from '@/components/layout/AppShell'
 import { MessageBubble, type Message } from '@/components/chat/MessageBubble'
 import { ChatInput } from '@/components/chat/ChatInput'
 import { QuickActions } from '@/components/chat/QuickActions'
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { MessageSkeleton } from '@/components/ui/Skeleton'
 import { createClient } from '@/lib/supabase/client'
 
 export default function ChatPage() {
@@ -47,10 +47,15 @@ export default function ChatPage() {
 
     // Check if user is admin (for AppShell)
     async function checkAdmin() {
-      const { data: { user } } = await supabase.auth.getUser()
-      // We can't access ADMIN_EMAIL on client, so we'll just show without admin
-      // The server-side AppShellWrapper handles this properly
-      setIsAdmin(false)
+      try {
+        const response = await fetch('/api/admin/check')
+        if (response.ok) {
+          const data = await response.json()
+          setIsAdmin(data.isAdmin ?? false)
+        }
+      } catch {
+        setIsAdmin(false)
+      }
     }
 
     loadHistory()
@@ -178,9 +183,11 @@ export default function ChatPage() {
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4">
           {isLoadingHistory ? (
-            <div className="flex flex-col items-center justify-center h-full">
-              <LoadingSpinner size="lg" />
-              <p className="mt-4 text-gray-500">Loading messages...</p>
+            <div className="space-y-4" role="status" aria-label="Loading messages">
+              <MessageSkeleton isUser={false} />
+              <MessageSkeleton isUser={true} />
+              <MessageSkeleton isUser={false} />
+              <span className="sr-only">Loading messages...</span>
             </div>
           ) : messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-4">
@@ -208,13 +215,15 @@ export default function ChatPage() {
             </div>
           ) : (
             <>
-              {messages.map((message) => (
-                <MessageBubble
-                  key={message.id}
-                  message={message}
-                  onSaveDraft={handleSaveDraft}
-                />
-              ))}
+              <div role="list" aria-label="Chat messages">
+                {messages.map((message) => (
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    onSaveDraft={handleSaveDraft}
+                  />
+                ))}
+              </div>
               {error && (
                 <div className="flex items-start gap-3 mb-4 p-4 bg-red-50 border-l-4 border-red-500 rounded-r-lg">
                   <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />

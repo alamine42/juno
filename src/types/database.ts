@@ -30,6 +30,7 @@ export interface Database {
           email: string
           name: string | null
           timezone: string
+          is_admin: boolean
           created_at: string
           updated_at: string
         }
@@ -38,6 +39,7 @@ export interface Database {
           email: string
           name?: string | null
           timezone?: string
+          is_admin?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -46,6 +48,7 @@ export interface Database {
           email?: string
           name?: string | null
           timezone?: string
+          is_admin?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -189,6 +192,7 @@ export interface Database {
           batch_id: string | null
           batch_position: number | null
           reminder_at: string | null
+          reminder_sent_at: string | null
           created_at: string
           updated_at: string
         }
@@ -203,6 +207,7 @@ export interface Database {
           batch_id?: string | null
           batch_position?: number | null
           reminder_at?: string | null
+          reminder_sent_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -217,6 +222,7 @@ export interface Database {
           batch_id?: string | null
           batch_position?: number | null
           reminder_at?: string | null
+          reminder_sent_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -279,6 +285,24 @@ export interface Database {
         }
         Relationships: GenericRelationship[]
       }
+      system_health: {
+        Row: {
+          key: string
+          value: Json
+          updated_at: string
+        }
+        Insert: {
+          key: string
+          value: Json
+          updated_at?: string
+        }
+        Update: {
+          key?: string
+          value?: Json
+          updated_at?: string
+        }
+        Relationships: GenericRelationship[]
+      }
     }
     Views: Record<string, never>
     Functions: Record<string, never>
@@ -302,3 +326,4 @@ export type ChatMessage = Tables<'chat_messages'>
 export type ContentFramework = Tables<'content_frameworks'>
 export type ContentBatch = Tables<'content_batches'>
 export type FrameworkUsage = Tables<'framework_usage'>
+export type SystemHealth = Tables<'system_health'>

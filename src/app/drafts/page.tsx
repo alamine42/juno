@@ -2,15 +2,15 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Calendar, FileText, Search, SlidersHorizontal, Sparkles } from 'lucide-react'
+import { Plus, Calendar, FileText, Search, Sparkles } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { ContentCard } from '@/components/content/ContentCard'
 import { ReminderModal } from '@/components/content/ReminderModal'
 import { BatchModal } from '@/components/content/BatchModal'
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { ContentCardSkeleton } from '@/components/ui/Skeleton'
+import { ErrorMessage } from '@/components/ui/ErrorMessage'
 import { Button } from '@/components/ui/Button'
 import { type Content } from '@/types/database'
-import { createClient } from '@/lib/supabase/client'
 
 type TabFilter = 'all' | 'draft' | 'reminder_set' | 'posted'
 
@@ -25,17 +25,34 @@ export default function DraftsPage() {
   const router = useRouter()
   const [contents, setContents] = useState<Content[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<TabFilter>('all')
   const [reminderModalOpen, setReminderModalOpen] = useState(false)
   const [batchModalOpen, setBatchModalOpen] = useState(false)
   const [selectedContentId, setSelectedContentId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
 
-  const supabase = createClient()
+  // Check admin status
+  useEffect(() => {
+    async function checkAdmin() {
+      try {
+        const response = await fetch('/api/admin/check')
+        if (response.ok) {
+          const data = await response.json()
+          setIsAdmin(data.isAdmin ?? false)
+        }
+      } catch {
+        setIsAdmin(false)
+      }
+    }
+    checkAdmin()
+  }, [])
 
   // Fetch content
   const fetchContent = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
       const url = activeTab === 'all' ? '/api/content' : `/api/content?status=${activeTab}`
       const response = await fetch(url)
@@ -48,6 +65,7 @@ export default function DraftsPage() {
       setContents(data)
     } catch (err) {
       console.error('Failed to fetch content:', err)
+      setError('Failed to load your content. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -154,7 +172,7 @@ export default function DraftsPage() {
   }
 
   return (
-    <AppShell>
+    <AppShell isAdmin={isAdmin}>
       <div className="flex flex-col min-h-screen bg-gray-50/50">
         {/* Header - Enhanced with gradient */}
         <header className="flex-shrink-0 px-4 sm:px-6 lg:px-8 py-5 bg-white border-b border-gray-200/80 sticky top-0 z-10">
@@ -185,11 +203,14 @@ export default function DraftsPage() {
             {/* Tabs & Search row */}
             <div className="mt-5 flex flex-col sm:flex-row sm:items-center gap-4">
               {/* Tabs - Pill style */}
-              <div className="flex gap-1 p-1 bg-gray-100 rounded-xl overflow-x-auto">
+              <div className="flex gap-1 p-1 bg-gray-100 rounded-xl overflow-x-auto" role="tablist" aria-label="Content filters">
                 {TABS.map((tab) => (
                   <button
                     key={tab.value}
                     onClick={() => setActiveTab(tab.value)}
+                    role="tab"
+                    aria-selected={activeTab === tab.value}
+                    aria-controls={`tabpanel-${tab.value}`}
                     className={`relative px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 ${
                       activeTab === tab.value
                         ? 'bg-white text-gray-900 shadow-sm'
@@ -202,7 +223,7 @@ export default function DraftsPage() {
                         activeTab === tab.value
                           ? 'bg-gray-100 text-gray-600'
                           : 'bg-gray-200/60 text-gray-500'
-                      }`}>
+                      }`} aria-label={`${counts[tab.value]} items`}>
                         {counts[tab.value]}
                       </span>
                     )}
@@ -213,9 +234,11 @@ export default function DraftsPage() {
               {/* Search - Desktop only */}
               <div className="hidden sm:block flex-1 max-w-xs ml-auto">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <label htmlFor="content-search" className="sr-only">Search content</label>
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" aria-hidden="true" />
                   <input
-                    type="text"
+                    id="content-search"
+                    type="search"
                     placeholder="Search content..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -230,10 +253,22 @@ export default function DraftsPage() {
         {/* Content Grid */}
         <div className="flex-1 px-4 sm:px-6 lg:px-8 py-6">
           <div className="max-w-7xl mx-auto">
+            {/* Error state */}
+            {error && (
+              <ErrorMessage
+                message={error}
+                onRetry={fetchContent}
+                onDismiss={() => setError(null)}
+                className="mb-6"
+              />
+            )}
+
             {loading ? (
-              <div className="flex flex-col items-center justify-center py-20">
-                <LoadingSpinner size="lg" />
-                <p className="mt-4 text-gray-500 font-medium">Loading content...</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" role="status" aria-label="Loading content">
+                {[...Array(8)].map((_, i) => (
+                  <ContentCardSkeleton key={i} />
+                ))}
+                <span className="sr-only">Loading content...</span>
               </div>
             ) : filteredContents.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">

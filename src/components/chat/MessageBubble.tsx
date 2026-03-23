@@ -21,6 +21,8 @@ export function MessageBubble({ message, onSaveDraft }: MessageBubbleProps) {
 
   return (
     <div
+      role="listitem"
+      aria-label={`${isUser ? 'Your message' : 'Juno message'}${isLoading ? ', loading' : ''}`}
       className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4 group`}
     >
       {/* Juno Avatar */}
@@ -36,14 +38,14 @@ export function MessageBubble({ message, onSaveDraft }: MessageBubbleProps) {
         className={`max-w-[85%] sm:max-w-[75%] lg:max-w-[65%] ${
           isUser
             ? 'bg-gradient-to-br from-green-500 to-green-600 text-white rounded-2xl rounded-tr-md shadow-md'
-            : 'bg-white border border-gray-200 rounded-2xl rounded-tl-md shadow-sm hover:shadow-md transition-shadow'
+            : 'bg-white border border-gray-200 rounded-2xl rounded-tl-md shadow-sm hover:shadow-md transition-shadow duration-200'
         } px-4 py-3`}
       >
         {isLoading ? (
           <LoadingDots />
         ) : (
           <>
-            <p className={`${isUser ? 'text-white' : 'text-gray-900'} whitespace-pre-wrap break-words text-[15px] leading-relaxed`}>
+            <p className={`${isUser ? 'text-white' : 'text-gray-900'} whitespace-pre-wrap break-words text-[15px] leading-[1.6]`}>
               {message.content}
             </p>
 
@@ -54,6 +56,7 @@ export function MessageBubble({ message, onSaveDraft }: MessageBubbleProps) {
                 {onSaveDraft && !message.contentId && (
                   <button
                     onClick={() => onSaveDraft(message.content)}
+                    aria-label="Save this response as a draft"
                     className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium border border-green-200 text-green-700 hover:bg-green-50 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
                   >
                     <SaveIcon />

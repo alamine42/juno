@@ -52,3 +52,26 @@ export function isServiceClientAvailable(): boolean {
     process.env.SUPABASE_SERVICE_ROLE_KEY
   )
 }
+
+/**
+ * Alias for getServiceClient - used by Sprint 4 cron/admin routes.
+ * Creates a new client each time (no caching) for cleaner request isolation.
+ */
+export function createServiceClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error(
+      'Missing Supabase service role configuration. ' +
+        'Ensure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.'
+    )
+  }
+
+  return createSupabaseClient<Database>(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  })
+}

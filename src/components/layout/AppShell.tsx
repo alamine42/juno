@@ -43,7 +43,10 @@ export function AppShell({ children, isAdmin = false }: AppShellProps) {
   return (
     <div className="flex min-h-screen bg-gray-50">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-white border-r border-gray-200">
+      <aside
+        className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-white border-r border-gray-200"
+        aria-label="Main navigation"
+      >
         {/* Logo */}
         <div className="flex items-center h-16 px-6 border-b border-gray-200">
           <div className="flex items-center gap-3">
@@ -55,7 +58,7 @@ export function AppShell({ children, isAdmin = false }: AppShellProps) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto" role="navigation">
           {navItems.map((item) => {
             const isActive = pathname.startsWith(item.href)
             const Icon = item.icon
@@ -63,6 +66,7 @@ export function AppShell({ children, isAdmin = false }: AppShellProps) {
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={isActive ? 'page' : undefined}
                 className={`flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${
                   isActive
                     ? 'bg-green-50 text-green-700 border-l-4 border-green-600 -ml-px'
@@ -71,7 +75,7 @@ export function AppShell({ children, isAdmin = false }: AppShellProps) {
               >
                 <Icon className={`w-5 h-5 mr-3 transition-colors ${
                   isActive ? 'text-green-600' : 'text-gray-400'
-                }`} />
+                }`} aria-hidden="true" />
                 <span>{item.label}</span>
               </Link>
             )
@@ -82,9 +86,10 @@ export function AppShell({ children, isAdmin = false }: AppShellProps) {
         <div className="p-3 border-t border-gray-200">
           <button
             onClick={handleSignOut}
+            aria-label="Sign out of your account"
             className="flex items-center w-full px-4 py-3 rounded-lg text-sm font-medium text-gray-700 hover:bg-red-50 hover:text-red-700 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
           >
-            <LogOut className="w-5 h-5 mr-3" />
+            <LogOut className="w-5 h-5 mr-3" aria-hidden="true" />
             Sign Out
           </button>
         </div>
@@ -96,7 +101,11 @@ export function AppShell({ children, isAdmin = false }: AppShellProps) {
       </main>
 
       {/* Mobile Bottom Tab Bar */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 z-50 pb-safe">
+      <nav
+        className="lg:hidden fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 z-50 pb-safe"
+        aria-label="Mobile navigation"
+        role="navigation"
+      >
         <div className="flex justify-around">
           {navItems.map((item) => {
             const isActive = pathname.startsWith(item.href)
@@ -105,24 +114,27 @@ export function AppShell({ children, isAdmin = false }: AppShellProps) {
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={isActive ? 'page' : undefined}
+                aria-label={item.label}
                 className={`flex flex-col items-center justify-center py-3 px-3 min-w-[60px] min-h-[64px] relative transition-colors duration-200 ${
                   isActive ? 'text-green-600' : 'text-gray-500 active:text-gray-700'
                 } focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green-500`}
               >
                 {/* Active indicator dot */}
                 {isActive && (
-                  <div className="absolute top-1 left-1/2 transform -translate-x-1/2 w-1.5 h-1.5 bg-green-600 rounded-full" />
+                  <div className="absolute top-1 left-1/2 transform -translate-x-1/2 w-1.5 h-1.5 bg-green-600 rounded-full" aria-hidden="true" />
                 )}
-                <Icon className="w-6 h-6" />
+                <Icon className="w-6 h-6" aria-hidden="true" />
                 <span className="text-xs mt-1 font-medium">{item.label}</span>
               </Link>
             )
           })}
           <button
             onClick={handleSignOut}
+            aria-label="Sign out"
             className="flex flex-col items-center justify-center py-3 px-3 min-w-[60px] min-h-[64px] text-gray-500 active:text-gray-700 transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-500"
           >
-            <LogOut className="w-6 h-6" />
+            <LogOut className="w-6 h-6" aria-hidden="true" />
             <span className="text-xs mt-1 font-medium">Sign Out</span>
           </button>
         </div>

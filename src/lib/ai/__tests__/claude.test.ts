@@ -1,9 +1,14 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+// Use vi.hoisted to create mock that can be referenced in vi.mock
+const { mockCreate } = vi.hoisted(() => ({
+  mockCreate: vi.fn(),
+}))
 
 // Mock Anthropic SDK before importing claude
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class MockAnthropic {
-    messages = { create: vi.fn() }
+    messages = { create: mockCreate }
   },
 }))
 
@@ -17,6 +22,7 @@ import {
   parseMultiFormatResponse,
   serializeMultiFormat,
   deserializeMultiFormat,
+  generateContent,
 } from '../claude'
 
 describe('parseMultiFormatResponse', () => {
@@ -221,5 +227,125 @@ describe('deserializeMultiFormat', () => {
     const result = deserializeMultiFormat(nullJson)
 
     expect(result.caption).toBe(nullJson)
+  })
+})
+
+describe('generateContent', () => {
+  beforeEach(() => {
+    mockCreate.mockReset()
+  })
+
+  it('returns success with content on valid response', async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'Generated content here' }],
+      usage: { input_tokens: 100, output_tokens: 50 },
+    })
+
+    const result = await generateContent('Write a caption', null, [])
+
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.content).toBe('Generated content here')
+      expect(result.usage?.input_tokens).toBe(100)
+      expect(result.usage?.output_tokens).toBe(50)
+    }
+  })
+
+  it('returns rate_limit error on 429', async () => {
+    const error = new Error('Rate limited') as Error & { status: number }
+    error.status = 429
+    mockCreate.mockRejectedValue(error)
+
+    const result = await generateContent('Write a caption', null, [])
+
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.code).toBe('rate_limit')
+      expect(result.error).toContain('Rate limit')
+    }
+  })
+
+  it('returns api_error on 500', async () => {
+    const error = new Error('Server error') as Error & { status: number }
+    error.status = 500
+    mockCreate.mockRejectedValue(error)
+
+    const result = await generateContent('Write a caption', null, [])
+
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.code).toBe('api_error')
+      expect(result.error).toContain('temporarily unavailable')
+    }
+  })
+
+  it('returns invalid_request on 400', async () => {
+    const error = new Error('Bad request') as Error & { status: number }
+    error.status = 400
+    mockCreate.mockRejectedValue(error)
+
+    const result = await generateContent('Write a caption', null, [])
+
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.code).toBe('invalid_request')
+      expect(result.error).toContain('Invalid request')
+    }
+  })
+
+  it('returns api_error on empty content', async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: 'text', text: '' }],
+    })
+
+    const result = await generateContent('Write a caption', null, [])
+
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.code).toBe('api_error')
+      expect(result.error).toContain('Unable to generate')
+    }
+  })
+
+  it('returns api_error when no text block found', async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: 'tool_use', id: '123', name: 'test', input: {} }],
+    })
+
+    const result = await generateContent('Write a caption', null, [])
+
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.code).toBe('api_error')
+    }
+  })
+
+  it('includes token usage when available', async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'Content' }],
+      usage: { input_tokens: 200, output_tokens: 100 },
+    })
+
+    const result = await generateContent('Write a caption', null, [])
+
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.usage).toBeDefined()
+      expect(result.usage?.input_tokens).toBe(200)
+      expect(result.usage?.output_tokens).toBe(100)
+      expect(result.usage?.model).toBe('claude-sonnet-4-20250514')
+    }
+  })
+
+  it('handles unknown errors gracefully', async () => {
+    mockCreate.mockRejectedValue(new Error('Unknown error'))
+
+    const result = await generateContent('Write a caption', null, [])
+
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.code).toBe('unknown')
+      expect(result.error).toContain('Failed to generate')
+    }
   })
 })
