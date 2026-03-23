@@ -318,4 +318,72 @@ describe('Admin Health API Route', () => {
       expect(body.services.cron.lastRun).toBeNull()
     })
   })
+
+  describe('Public vs Admin Separation', () => {
+    it('exposes detailed services info (unlike public /api/health)', async () => {
+      setupMocks({
+        user: { id: 'admin-123' },
+        isAdmin: true,
+      })
+
+      const response = await GET()
+
+      const body = await response.json()
+      // Admin endpoint DOES expose internal info
+      expect(body.services).toBeDefined()
+      expect(body.services.database).toBeDefined()
+      expect(body.services.cron).toBeDefined()
+      expect(body.version).toBeDefined()
+    })
+
+    it('exposes cron run statistics', async () => {
+      const recentTimestamp = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+      setupMocks({
+        user: { id: 'admin-123' },
+        isAdmin: true,
+        healthData: {
+          value: {
+            timestamp: recentTimestamp,
+            processed: 5,
+            skipped: 2,
+            errors: 1,
+          },
+        },
+      })
+
+      const response = await GET()
+
+      const body = await response.json()
+      // Admin endpoint exposes processing stats
+      expect(body.services.cron.processed).toBe(5)
+      expect(body.services.cron.skipped).toBe(2)
+      expect(body.services.cron.errors).toBe(1)
+    })
+
+    it('uses database flag from coaches table (not email comparison)', async () => {
+      // This verifies we check is_admin column, not ADMIN_EMAIL env var
+      setupMocks({
+        user: { id: 'user-with-admin-flag' },
+        isAdmin: true,  // is_admin flag in DB
+      })
+
+      const response = await GET()
+
+      // Should allow because is_admin=true in database
+      expect(response.status).toBe(200)
+    })
+
+    it('rejects non-admin users even if authenticated', async () => {
+      setupMocks({
+        user: { id: 'regular-user' },
+        isAdmin: false,  // Not an admin
+      })
+
+      const response = await GET()
+
+      expect(response.status).toBe(403)
+      const body = await response.json()
+      expect(body.error).toBe('Forbidden')
+    })
+  })
 })

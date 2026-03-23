@@ -53,5 +53,35 @@ describe('Public Health API Route', () => {
       expect(keys).toContain('status')
       expect(keys).toContain('timestamp')
     })
+
+    it('requires no authentication (public endpoint)', async () => {
+      // This endpoint should be accessible without any auth headers
+      // for uptime monitoring services like UptimeRobot
+      const response = await GET()
+
+      expect(response.status).toBe(200)
+      // No 401 or 403
+      expect(response.status).not.toBe(401)
+      expect(response.status).not.toBe(403)
+    })
+
+    it('returns JSON content type', async () => {
+      const response = await GET()
+
+      const contentType = response.headers.get('content-type')
+      expect(contentType).toContain('application/json')
+    })
+
+    it('always returns status ok (never degraded or error)', async () => {
+      // Public endpoint should always return ok
+      // Detailed status is only in /api/admin/health
+      const response = await GET()
+
+      const body = await response.json()
+      expect(body.status).toBe('ok')
+      // Never returns degraded or down
+      expect(body.status).not.toBe('degraded')
+      expect(body.status).not.toBe('down')
+    })
   })
 })

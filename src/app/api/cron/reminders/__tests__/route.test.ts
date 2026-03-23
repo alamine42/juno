@@ -541,9 +541,39 @@ describe('Cron Reminders API Route', () => {
     })
   })
 
-  describe('POST endpoint', () => {
-    it('uses same logic as GET', async () => {
+  describe('POST endpoint (Manual Trigger)', () => {
+    it('returns stats in response (unlike GET)', async () => {
       setupValidCronHeaders()
+      setupSupabaseMocks({
+        contentItems: [
+          {
+            id: 'content-1',
+            body: 'Test content',
+            coach_id: 'coach-1',
+            coaches: { email: 'coach@example.com', name: 'Coach' },
+          },
+        ],
+      })
+
+      const response = await POST(createRequest())
+
+      expect(response.status).toBe(200)
+      const body = await response.json()
+      expect(body.ok).toBe(true)
+      expect(body.processed).toBeDefined()
+      expect(body.skipped).toBeDefined()
+      expect(body.errors).toBeDefined()
+    })
+
+    it('allows request without vercel-cron user-agent', async () => {
+      // Manual triggers only need valid secret, not vercel-cron user-agent
+      mockHeaders.mockResolvedValue({
+        get: (name: string) => {
+          if (name === 'user-agent') return 'Mozilla/5.0'  // Regular browser
+          if (name === 'authorization') return 'Bearer test-cron-secret'
+          return null
+        },
+      })
       setupSupabaseMocks({ contentItems: [] })
 
       const response = await POST(createRequest())
@@ -551,6 +581,139 @@ describe('Cron Reminders API Route', () => {
       expect(response.status).toBe(200)
       const body = await response.json()
       expect(body.ok).toBe(true)
+    })
+
+    it('still requires valid CRON_SECRET', async () => {
+      mockHeaders.mockResolvedValue({
+        get: (name: string) => {
+          if (name === 'user-agent') return 'Mozilla/5.0'
+          if (name === 'authorization') return 'Bearer wrong-secret'
+          return null
+        },
+      })
+
+      const response = await POST(createRequest())
+
+      expect(response.status).toBe(401)
+    })
+
+    it('returns correct stats for mixed batch', async () => {
+      mockHeaders.mockResolvedValue({
+        get: (name: string) => {
+          if (name === 'user-agent') return 'curl/7.0'
+          if (name === 'authorization') return 'Bearer test-cron-secret'
+          return null
+        },
+      })
+
+      setupSupabaseMocks({
+        contentItems: [
+          {
+            id: 'green-content',
+            body: 'Good content here',
+            coach_id: 'coach-1',
+            coaches: { email: 'coach1@example.com', name: 'Coach 1' },
+          },
+          {
+            id: 'red-content',
+            body: 'This will cure cancer',
+            coach_id: 'coach-2',
+            coaches: { email: 'coach2@example.com', name: 'Coach 2' },
+          },
+          {
+            id: 'yellow-content',
+            body: 'I think maybe this works',
+            coach_id: 'coach-3',
+            coaches: { email: 'coach3@example.com', name: 'Coach 3' },
+          },
+        ],
+      })
+
+      // Mock moderation to return different ratings per content
+      mockModerate
+        .mockReturnValueOnce({ rating: 'green', reasons: [] })
+        .mockReturnValueOnce({ rating: 'red', reasons: ['Contains blocked terms'] })
+        .mockReturnValueOnce({ rating: 'yellow', reasons: ['Contains hedging'] })
+
+      const response = await POST(createRequest())
+
+      expect(response.status).toBe(200)
+      const body = await response.json()
+      expect(body.ok).toBe(true)
+      // 2 processed (green + yellow), 1 skipped (red)
+      expect(body.processed).toBe(2)
+      expect(body.skipped).toBe(1)
+      expect(body.errors).toBe(0)
+    })
+  })
+
+  describe('Batch Processing', () => {
+    it('processes multiple content items in sequence', async () => {
+      setupValidCronHeaders()
+      setupSupabaseMocks({
+        contentItems: [
+          {
+            id: 'content-1',
+            body: 'First post',
+            coach_id: 'coach-1',
+            coaches: { email: 'coach1@example.com', name: 'Coach 1' },
+          },
+          {
+            id: 'content-2',
+            body: 'Second post',
+            coach_id: 'coach-2',
+            coaches: { email: 'coach2@example.com', name: 'Coach 2' },
+          },
+          {
+            id: 'content-3',
+            body: 'Third post',
+            coach_id: 'coach-3',
+            coaches: { email: 'coach3@example.com', name: 'Coach 3' },
+          },
+        ],
+      })
+
+      const response = await GET(createRequest())
+
+      expect(response.status).toBe(200)
+      expect(mockSendReminder).toHaveBeenCalledTimes(3)
+    })
+
+    it('handles mixed moderation results in batch', async () => {
+      setupValidCronHeaders()
+      setupSupabaseMocks({
+        contentItems: [
+          {
+            id: 'green-1',
+            body: 'Good content',
+            coach_id: 'coach-1',
+            coaches: { email: 'coach1@example.com', name: 'Coach 1' },
+          },
+          {
+            id: 'red-1',
+            body: 'Bad content',
+            coach_id: 'coach-2',
+            coaches: { email: 'coach2@example.com', name: 'Coach 2' },
+          },
+          {
+            id: 'green-2',
+            body: 'Another good post',
+            coach_id: 'coach-3',
+            coaches: { email: 'coach3@example.com', name: 'Coach 3' },
+          },
+        ],
+      })
+
+      mockModerate
+        .mockReturnValueOnce({ rating: 'green', reasons: [] })
+        .mockReturnValueOnce({ rating: 'red', reasons: ['Blocked'] })
+        .mockReturnValueOnce({ rating: 'green', reasons: [] })
+
+      const response = await GET(createRequest())
+
+      expect(response.status).toBe(200)
+      // Should send 2 emails (skip red)
+      expect(mockSendReminder).toHaveBeenCalledTimes(2)
     })
   })
 })
