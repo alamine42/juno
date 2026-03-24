@@ -248,11 +248,11 @@ export function ContentCard({
         {/* Footer with improved layout */}
         <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
           <span className="text-xs font-medium text-gray-400">
-            {new Date(content.created_at).toLocaleDateString('en-US', {
+            {content.created_at ? new Date(content.created_at).toLocaleDateString('en-US', {
               month: 'short',
               day: 'numeric',
               year: content.created_at.slice(0, 4) !== new Date().getFullYear().toString() ? 'numeric' : undefined,
-            })}
+            }) : 'Just now'}
           </span>
 
           {content.reminder_at && (
