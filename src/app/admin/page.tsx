@@ -7,7 +7,6 @@ import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/Button'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { ErrorMessage } from '@/components/ui/ErrorMessage'
-import { createClient } from '@/lib/supabase/client'
 
 interface AdminHealthData {
   status: 'ok' | 'degraded' | 'down'
@@ -100,8 +99,6 @@ export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
-  const supabase = createClient()
-
   const fetchData = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
       setRefreshing(true)
@@ -115,7 +112,7 @@ export default function AdminPage() {
       const healthResponse = await fetch('/api/admin/health')
 
       if (healthResponse.status === 401) {
-        router.push('/auth/login')
+        router.push('/sign-in')
         return
       }
 
@@ -132,30 +129,12 @@ export default function AdminPage() {
       const healthData = await healthResponse.json()
       setHealth(healthData)
 
-      // Fetch stats (we can do this since we're admin)
-      const { data: coaches } = await supabase
-        .from('coaches')
-        .select('id', { count: 'exact', head: true })
-
-      const { data: content, count: totalContent } = await supabase
-        .from('content')
-        .select('status', { count: 'exact' })
-
-      // Group by status
-      const statusCounts = { draft: 0, reminder_set: 0, posted: 0 }
-      if (content) {
-        content.forEach((c: { status: string }) => {
-          if (c.status in statusCounts) {
-            statusCounts[c.status as keyof typeof statusCounts]++
-          }
-        })
+      // Fetch stats via a new admin stats endpoint
+      const statsResponse = await fetch('/api/admin/stats')
+      if (statsResponse.ok) {
+        const statsData = await statsResponse.json()
+        setStats(statsData)
       }
-
-      setStats({
-        totalCoaches: coaches?.length ?? 0,
-        totalContent: totalContent ?? 0,
-        contentByStatus: statusCounts,
-      })
     } catch (err) {
       console.error('Admin fetch error:', err)
       setError('Failed to load admin data. Please try again.')
@@ -163,7 +142,7 @@ export default function AdminPage() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [router, supabase])
+  }, [router])
 
   useEffect(() => {
     fetchData()
@@ -297,7 +276,7 @@ export default function AdminPage() {
                           <Database className="w-5 h-5 text-gray-400" aria-hidden="true" />
                           <div>
                             <p className="font-medium text-gray-900">Database</p>
-                            <p className="text-sm text-gray-500">Supabase connection</p>
+                            <p className="text-sm text-gray-500">Neon PostgreSQL</p>
                           </div>
                         </div>
                         <StatusBadge status={health?.services.database ?? 'error'} />

@@ -1,9 +1,10 @@
 /**
  * Content interactions tracking for learning loop analytics.
  * Tracks silently - never blocks UX on tracking failure.
+ *
+ * Note: This module requires a content_interactions table to be added
+ * to the database schema. For now, tracking is stubbed out.
  */
-
-import { createClient } from '@/lib/supabase/server'
 
 export type EventType =
   | 'generated'
@@ -37,26 +38,15 @@ export interface ContentEvent {
  * Track a content interaction event.
  * This function never throws - all errors are logged and swallowed
  * to prevent tracking from blocking user experience.
+ *
+ * TODO: Implement when content_interactions table is added to schema.
  */
 export async function trackContentEvent(event: ContentEvent): Promise<void> {
   try {
-    const supabase = await createClient()
-
-    const { error } = await (supabase.from('content_interactions') as any).insert({
-      coach_id: event.coach_id,
-      content_id: event.content_id ?? null,
-      event_type: event.event_type,
-      metadata: event.metadata ?? {},
-    })
-
-    if (error) {
-      // Log but don't throw - tracking should never block UX
-      console.error('Tracking error:', {
-        event: 'tracking_failed',
-        error: error.message,
-        code: error.code,
-        event_type: event.event_type,
-      })
+    // Log for debugging - actual persistence is stubbed until
+    // content_interactions table is added to Drizzle schema
+    if (process.env.NODE_ENV === 'development') {
+      console.debug('Tracking event:', event)
     }
   } catch (err) {
     // Catch any unexpected errors - tracking must never crash the app
@@ -153,37 +143,13 @@ export async function trackRefinement(
 /**
  * Get framework usage stats for a coach in the last N days.
  * Used by suggestion logic.
+ *
+ * TODO: Implement when content_interactions table is added to schema.
  */
 export async function getFrameworkUsage(
   coachId: string,
   days: number = 7
 ): Promise<Record<string, number>> {
-  try {
-    const supabase = await createClient()
-    const since = new Date()
-    since.setDate(since.getDate() - days)
-
-    const { data, error } = await (supabase
-      .from('content_interactions') as any)
-      .select('metadata')
-      .eq('coach_id', coachId)
-      .eq('event_type', 'generated')
-      .gte('created_at', since.toISOString()) as { data: { metadata: TrackingMetadata }[] | null; error: Error | null }
-
-    if (error || !data) {
-      return {}
-    }
-
-    const usage: Record<string, number> = {}
-    for (const row of data) {
-      const frameworkId = row.metadata?.framework_id
-      if (frameworkId) {
-        usage[frameworkId] = (usage[frameworkId] || 0) + 1
-      }
-    }
-
-    return usage
-  } catch {
-    return {}
-  }
+  // Stubbed - return empty until content_interactions table exists
+  return {}
 }

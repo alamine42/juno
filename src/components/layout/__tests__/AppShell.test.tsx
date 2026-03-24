@@ -9,13 +9,21 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
 }))
 
-// Mock Supabase client
-const mockSignOut = vi.fn().mockResolvedValue({})
-vi.mock('@/lib/supabase/client', () => ({
-  createClient: () => ({
-    auth: {
-      signOut: mockSignOut,
-    },
+// Mock Clerk - override the global mock from setup.ts
+const mockSignOut = vi.fn().mockResolvedValue(undefined)
+vi.mock('@clerk/nextjs', () => ({
+  useClerk: () => ({
+    signOut: mockSignOut,
+  }),
+  useUser: () => ({
+    user: null,
+    isLoaded: true,
+    isSignedIn: true,
+  }),
+  useAuth: () => ({
+    userId: 'test-user-id',
+    isLoaded: true,
+    isSignedIn: true,
   }),
 }))
 

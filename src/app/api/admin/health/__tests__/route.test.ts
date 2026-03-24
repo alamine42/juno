@@ -1,79 +1,73 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// Hoisted mocks
-const { mockCreateClient, mockCreateServiceClient } = vi.hoisted(() => ({
-  mockCreateClient: vi.fn(),
-  mockCreateServiceClient: vi.fn(),
+// Mock auth
+const mockAuth = vi.fn()
+vi.mock('@clerk/nextjs/server', () => ({
+  auth: () => mockAuth(),
 }))
 
-// Mock supabase clients
-vi.mock('@/lib/supabase/server', () => ({
-  createClient: mockCreateClient,
+// Mock hasAdminClaim
+const mockHasAdminClaim = vi.fn()
+vi.mock('@/types/clerk', () => ({
+  hasAdminClaim: (claims: unknown) => mockHasAdminClaim(claims),
 }))
 
-vi.mock('@/lib/supabase/service', () => ({
-  createServiceClient: mockCreateServiceClient,
+// Mock db
+const mockDbSelect = vi.fn()
+vi.mock('@/lib/db', () => ({
+  db: {
+    select: () => mockDbSelect(),
+  },
 }))
 
 import { GET } from '../route'
 
 function setupMocks(overrides: {
-  user?: { id: string } | null
-  isAdmin?: boolean
-  coachError?: Error | null
+  userId?: string | null
+  isAdminClaim?: boolean
+  isAdminDb?: boolean
   databaseCheckError?: Error | null
   healthData?: {
     value: { timestamp: string; processed: number; skipped: number; errors: number }
+    updatedAt: Date
   } | null
   healthError?: Error | null
 } = {}) {
-  const user = overrides.user === undefined ? { id: 'user-123' } : overrides.user
+  const userId = overrides.userId === undefined ? 'user-123' : overrides.userId
 
-  // Mock createClient (for auth)
-  mockCreateClient.mockResolvedValue({
-    auth: {
-      getUser: vi.fn().mockResolvedValue({ data: { user }, error: null }),
-    },
+  mockAuth.mockReturnValue({
+    userId,
+    sessionClaims: userId ? { metadata: { isAdmin: overrides.isAdminClaim ?? false } } : {},
   })
 
-  // Mock createServiceClient (for admin check and health queries)
-  mockCreateServiceClient.mockReturnValue({
-    from: vi.fn((table: string) => {
-      if (table === 'coaches') {
-        // First call: is_admin check, second call: database health check
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({
-                data: overrides.coachError ? null : { is_admin: overrides.isAdmin ?? false },
-                error: overrides.coachError ?? null,
-              }),
-              limit: vi.fn().mockResolvedValue({
-                data: overrides.databaseCheckError ? null : [{ id: 'test' }],
-                error: overrides.databaseCheckError ?? null,
-              }),
-            }),
-            limit: vi.fn().mockResolvedValue({
-              data: overrides.databaseCheckError ? null : [{ id: 'test' }],
-              error: overrides.databaseCheckError ?? null,
-            }),
-          }),
-        }
-      }
-      if (table === 'system_health') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({
-                data: overrides.healthData ?? null,
-                error: overrides.healthError ?? null,
-              }),
-            }),
-          }),
-        }
-      }
-      return {}
-    }),
+  mockHasAdminClaim.mockReturnValue(overrides.isAdminClaim ?? false)
+
+  // Setup db.select() chain
+  let callCount = 0
+  mockDbSelect.mockImplementation(() => {
+    callCount++
+    return {
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockImplementation(() => {
+          // First call: admin check from coaches table
+          if (callCount === 1) {
+            return Promise.resolve([{ isAdmin: overrides.isAdminDb ?? false }])
+          }
+          // Third call: systemHealth query
+          if (overrides.healthError) {
+            return Promise.reject(overrides.healthError)
+          }
+          return Promise.resolve(overrides.healthData ? [overrides.healthData] : [])
+        }),
+        limit: vi.fn().mockImplementation(() => {
+          // Second call: database health check
+          if (overrides.databaseCheckError) {
+            return Promise.reject(overrides.databaseCheckError)
+          }
+          return Promise.resolve([{ id: 'test' }])
+        }),
+      }),
+    }
   })
 }
 
@@ -91,7 +85,7 @@ describe('Admin Health API Route', () => {
 
   describe('Authentication', () => {
     it('returns 401 when not authenticated', async () => {
-      setupMocks({ user: null })
+      setupMocks({ userId: null })
 
       const response = await GET()
 
@@ -101,7 +95,7 @@ describe('Admin Health API Route', () => {
     })
 
     it('returns 403 when user is not admin', async () => {
-      setupMocks({ user: { id: 'user-123' }, isAdmin: false })
+      setupMocks({ userId: 'user-123', isAdminClaim: false, isAdminDb: false })
 
       const response = await GET()
 
@@ -110,21 +104,22 @@ describe('Admin Health API Route', () => {
       expect(body.error).toBe('Forbidden')
     })
 
-    it('returns 403 when coach lookup fails', async () => {
+    it('allows admin users via Clerk claims', async () => {
       setupMocks({
-        user: { id: 'user-123' },
-        coachError: new Error('Not found'),
+        userId: 'admin-123',
+        isAdminClaim: true,
       })
 
       const response = await GET()
 
-      expect(response.status).toBe(403)
+      expect(response.status).toBe(200)
     })
 
-    it('allows admin users', async () => {
+    it('allows admin users via database flag', async () => {
       setupMocks({
-        user: { id: 'admin-123' },
-        isAdmin: true,
+        userId: 'admin-123',
+        isAdminClaim: false,
+        isAdminDb: true,
       })
 
       const response = await GET()
@@ -137,8 +132,8 @@ describe('Admin Health API Route', () => {
     it('returns ok status when all services healthy', async () => {
       const recentTimestamp = new Date(Date.now() - 10 * 60 * 1000).toISOString() // 10 min ago
       setupMocks({
-        user: { id: 'admin-123' },
-        isAdmin: true,
+        userId: 'admin-123',
+        isAdminClaim: true,
         healthData: {
           value: {
             timestamp: recentTimestamp,
@@ -146,6 +141,7 @@ describe('Admin Health API Route', () => {
             skipped: 1,
             errors: 0,
           },
+          updatedAt: new Date(),
         },
       })
 
@@ -161,8 +157,8 @@ describe('Admin Health API Route', () => {
     it('returns degraded status when cron is stale', async () => {
       const staleTimestamp = new Date(Date.now() - 60 * 60 * 1000).toISOString() // 1 hour ago
       setupMocks({
-        user: { id: 'admin-123' },
-        isAdmin: true,
+        userId: 'admin-123',
+        isAdminClaim: true,
         healthData: {
           value: {
             timestamp: staleTimestamp,
@@ -170,6 +166,7 @@ describe('Admin Health API Route', () => {
             skipped: 0,
             errors: 0,
           },
+          updatedAt: new Date(),
         },
       })
 
@@ -183,8 +180,8 @@ describe('Admin Health API Route', () => {
 
     it('returns never status when no cron data', async () => {
       setupMocks({
-        user: { id: 'admin-123' },
-        isAdmin: true,
+        userId: 'admin-123',
+        isAdminClaim: true,
         healthData: null,
       })
 
@@ -198,8 +195,8 @@ describe('Admin Health API Route', () => {
 
     it('returns down status when database fails', async () => {
       setupMocks({
-        user: { id: 'admin-123' },
-        isAdmin: true,
+        userId: 'admin-123',
+        isAdminClaim: true,
         databaseCheckError: new Error('Connection failed'),
       })
 
@@ -216,8 +213,8 @@ describe('Admin Health API Route', () => {
     it('includes all required fields', async () => {
       const recentTimestamp = new Date(Date.now() - 5 * 60 * 1000).toISOString()
       setupMocks({
-        user: { id: 'admin-123' },
-        isAdmin: true,
+        userId: 'admin-123',
+        isAdminClaim: true,
         healthData: {
           value: {
             timestamp: recentTimestamp,
@@ -225,6 +222,7 @@ describe('Admin Health API Route', () => {
             skipped: 2,
             errors: 1,
           },
+          updatedAt: new Date(),
         },
       })
 
@@ -251,28 +249,26 @@ describe('Admin Health API Route', () => {
 
     it('returns version from environment or default', async () => {
       setupMocks({
-        user: { id: 'admin-123' },
-        isAdmin: true,
+        userId: 'admin-123',
+        isAdminClaim: true,
       })
 
       const response = await GET()
 
       const body = await response.json()
       expect(body.version).toBeDefined()
-      // Should be either the env var or default '1.0.0'
       expect(typeof body.version).toBe('string')
     })
 
     it('returns ISO timestamp', async () => {
       setupMocks({
-        user: { id: 'admin-123' },
-        isAdmin: true,
+        userId: 'admin-123',
+        isAdminClaim: true,
       })
 
       const response = await GET()
 
       const body = await response.json()
-      // Verify it's a valid ISO timestamp
       const parsed = new Date(body.timestamp)
       expect(parsed.toISOString()).toBe(body.timestamp)
     })
@@ -282,8 +278,8 @@ describe('Admin Health API Route', () => {
     it('includes cron statistics when available', async () => {
       const recentTimestamp = new Date(Date.now() - 5 * 60 * 1000).toISOString()
       setupMocks({
-        user: { id: 'admin-123' },
-        isAdmin: true,
+        userId: 'admin-123',
+        isAdminClaim: true,
         healthData: {
           value: {
             timestamp: recentTimestamp,
@@ -291,6 +287,7 @@ describe('Admin Health API Route', () => {
             skipped: 3,
             errors: 0,
           },
+          updatedAt: new Date(),
         },
       })
 
@@ -305,8 +302,8 @@ describe('Admin Health API Route', () => {
 
     it('handles system_health query error gracefully', async () => {
       setupMocks({
-        user: { id: 'admin-123' },
-        isAdmin: true,
+        userId: 'admin-123',
+        isAdminClaim: true,
         healthError: new Error('Table not found'),
       })
 
@@ -316,74 +313,6 @@ describe('Admin Health API Route', () => {
       const body = await response.json()
       expect(body.services.cron.status).toBe('never')
       expect(body.services.cron.lastRun).toBeNull()
-    })
-  })
-
-  describe('Public vs Admin Separation', () => {
-    it('exposes detailed services info (unlike public /api/health)', async () => {
-      setupMocks({
-        user: { id: 'admin-123' },
-        isAdmin: true,
-      })
-
-      const response = await GET()
-
-      const body = await response.json()
-      // Admin endpoint DOES expose internal info
-      expect(body.services).toBeDefined()
-      expect(body.services.database).toBeDefined()
-      expect(body.services.cron).toBeDefined()
-      expect(body.version).toBeDefined()
-    })
-
-    it('exposes cron run statistics', async () => {
-      const recentTimestamp = new Date(Date.now() - 5 * 60 * 1000).toISOString()
-      setupMocks({
-        user: { id: 'admin-123' },
-        isAdmin: true,
-        healthData: {
-          value: {
-            timestamp: recentTimestamp,
-            processed: 5,
-            skipped: 2,
-            errors: 1,
-          },
-        },
-      })
-
-      const response = await GET()
-
-      const body = await response.json()
-      // Admin endpoint exposes processing stats
-      expect(body.services.cron.processed).toBe(5)
-      expect(body.services.cron.skipped).toBe(2)
-      expect(body.services.cron.errors).toBe(1)
-    })
-
-    it('uses database flag from coaches table (not email comparison)', async () => {
-      // This verifies we check is_admin column, not ADMIN_EMAIL env var
-      setupMocks({
-        user: { id: 'user-with-admin-flag' },
-        isAdmin: true,  // is_admin flag in DB
-      })
-
-      const response = await GET()
-
-      // Should allow because is_admin=true in database
-      expect(response.status).toBe(200)
-    })
-
-    it('rejects non-admin users even if authenticated', async () => {
-      setupMocks({
-        user: { id: 'regular-user' },
-        isAdmin: false,  // Not an admin
-      })
-
-      const response = await GET()
-
-      expect(response.status).toBe(403)
-      const body = await response.json()
-      expect(body.error).toBe('Forbidden')
     })
   })
 })

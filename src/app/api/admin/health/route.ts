@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { createServiceClient } from '@/lib/supabase/service'
+import { auth } from '@clerk/nextjs/server'
+import { db } from '@/lib/db'
+import { coaches, systemHealth } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
+import { hasAdminClaim } from '@/types/clerk'
 
 interface CronHealthValue {
   timestamp: string
@@ -29,7 +32,7 @@ interface AdminHealthResponse {
  * GET /api/admin/health
  *
  * Admin-only health endpoint with full telemetry.
- * Requires is_admin=true flag in coaches table.
+ * Requires is_admin=true flag in coaches table or Clerk metadata.
  *
  * Returns:
  * - Database connection status
@@ -37,37 +40,32 @@ interface AdminHealthResponse {
  * - Overall system status
  */
 export async function GET() {
-  const supabase = await createClient()
+  const { userId, sessionClaims } = await auth()
 
-  // Check authentication
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
+  if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Check admin flag in database (not email comparison)
-  // Use service client for this query since is_admin column may not be in RLS
-  const serviceClient = createServiceClient()
-  const { data: coach, error: coachError } = await serviceClient
-    .from('coaches')
-    .select('is_admin')
-    .eq('id', user.id)
-    .single()
+  // Check admin access - first via Clerk claims, then database
+  let isAdmin = hasAdminClaim(sessionClaims)
 
-  if (coachError || !coach?.is_admin) {
+  if (!isAdmin) {
+    const [coach] = await db
+      .select({ isAdmin: coaches.isAdmin })
+      .from(coaches)
+      .where(eq(coaches.clerkId, userId))
+
+    isAdmin = coach?.isAdmin ?? false
+  }
+
+  if (!isAdmin) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   // Check database health by attempting a simple query
   let databaseStatus: 'ok' | 'error' = 'ok'
   try {
-    const { error } = await serviceClient.from('coaches').select('id').limit(1)
-    if (error) {
-      databaseStatus = 'error'
-    }
+    await db.select({ id: coaches.id }).from(coaches).limit(1)
   } catch {
     databaseStatus = 'error'
   }
@@ -79,11 +77,10 @@ export async function GET() {
   }
 
   try {
-    const { data: healthData } = await serviceClient
-      .from('system_health')
-      .select('value, updated_at')
-      .eq('key', 'last_cron_run')
-      .single()
+    const [healthData] = await db
+      .select({ value: systemHealth.value, updatedAt: systemHealth.updatedAt })
+      .from(systemHealth)
+      .where(eq(systemHealth.key, 'last_cron_run'))
 
     if (healthData) {
       const value = healthData.value as unknown as CronHealthValue

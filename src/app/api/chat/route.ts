@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { z } from 'zod'
+import { db } from '@/lib/db'
+import { chatMessages, content, brandProfiles } from '@/lib/db/schema'
+import { getOrCreateCoach } from '@/lib/db/helpers'
+import { eq, asc } from 'drizzle-orm'
 import { generateContent, type BrandProfile } from '@/lib/ai/claude'
 
 const MAX_MESSAGE_LENGTH = 2000
@@ -33,76 +36,86 @@ const chatMessageSchema = z.object({
 })
 
 export async function POST(request: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json(
-      { error: 'Unauthorized', message: 'Authentication required' },
-      { status: 401 }
-    )
-  }
-
-  // Rate limiting
-  if (!checkRateLimit(user.id)) {
-    return NextResponse.json(
-      { error: 'Rate limited', message: 'Too many requests. Please wait a moment.' },
-      { status: 429 }
-    )
-  }
-
-  // Parse and validate request body
-  let body: unknown
   try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON', message: 'Request body must be valid JSON' },
-      { status: 400 }
-    )
-  }
+    const coach = await getOrCreateCoach()
 
-  const parsed = chatMessageSchema.safeParse(body)
-  if (!parsed.success) {
-    const errors = parsed.error.flatten()
-    return NextResponse.json(
-      {
-        error: 'Validation failed',
-        message: errors.fieldErrors.message?.[0] || 'Invalid message',
-      },
-      { status: 400 }
-    )
-  }
+    // Rate limiting
+    if (!checkRateLimit(coach.id)) {
+      return NextResponse.json(
+        { error: 'Rate limited', message: 'Too many requests. Please wait a moment.' },
+        { status: 429 }
+      )
+    }
 
-  const { message } = parsed.data
+    // Parse and validate request body
+    let body: unknown
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid JSON', message: 'Request body must be valid JSON' },
+        { status: 400 }
+      )
+    }
 
-  try {
+    const parsed = chatMessageSchema.safeParse(body)
+    if (!parsed.success) {
+      const errors = parsed.error.flatten()
+      return NextResponse.json(
+        {
+          error: 'Validation failed',
+          message: errors.fieldErrors.message?.[0] || 'Invalid message',
+        },
+        { status: 400 }
+      )
+    }
+
+    const { message } = parsed.data
+
     // Load brand profile
-    const { data: brandProfile } = await supabase
-      .from('brand_profiles')
-      .select('style_words, tone, emoji_usage, sign_off, avoided_topics, avoided_words, preferred_words, target_audience, example_posts')
-      .eq('coach_id', user.id)
-      .single()
+    const [brandProfile] = await db
+      .select({
+        styleWords: brandProfiles.styleWords,
+        tone: brandProfiles.tone,
+        emojiUsage: brandProfiles.emojiUsage,
+        signOff: brandProfiles.signOff,
+        avoidedTopics: brandProfiles.avoidedTopics,
+        avoidedWords: brandProfiles.avoidedWords,
+        preferredWords: brandProfiles.preferredWords,
+        targetAudience: brandProfiles.targetAudience,
+        examplePosts: brandProfiles.examplePosts,
+      })
+      .from(brandProfiles)
+      .where(eq(brandProfiles.coachId, coach.id))
 
     // Load last 20 chat messages for context (ordered ASC for conversation flow)
-    const { data: chatHistory } = await supabase
-      .from('chat_messages')
-      .select('role, content')
-      .eq('coach_id', user.id)
-      .order('created_at', { ascending: true })
+    const chatHistory = await db
+      .select({ role: chatMessages.role, content: chatMessages.content })
+      .from(chatMessages)
+      .where(eq(chatMessages.coachId, coach.id))
+      .orderBy(asc(chatMessages.createdAt))
       .limit(HISTORY_LIMIT)
 
-    const history = (chatHistory as { role: string; content: string }[] | null)?.map(msg => ({
+    const history = chatHistory.map(msg => ({
       role: msg.role as 'user' | 'assistant',
       content: msg.content,
-    })) ?? []
+    }))
+
+    // Transform brand profile to expected format
+    const brandProfileForAI: BrandProfile | null = brandProfile ? {
+      style_words: brandProfile.styleWords,
+      tone: brandProfile.tone,
+      emoji_usage: brandProfile.emojiUsage,
+      sign_off: brandProfile.signOff,
+      avoided_topics: brandProfile.avoidedTopics,
+      avoided_words: brandProfile.avoidedWords,
+      preferred_words: brandProfile.preferredWords,
+      target_audience: brandProfile.targetAudience,
+      example_posts: brandProfile.examplePosts,
+    } : null
 
     // Call Claude to generate content
-    const result = await generateContent(
-      message,
-      brandProfile as BrandProfile | null,
-      history
-    )
+    const result = await generateContent(message, brandProfileForAI, history)
 
     if (!result.success) {
       // Map AI error codes to HTTP status codes
@@ -119,25 +132,23 @@ export async function POST(request: NextRequest) {
     }
 
     // Persist user message
-    await (supabase.from('chat_messages') as any).insert({
-      coach_id: user.id,
+    await db.insert(chatMessages).values({
+      coachId: coach.id,
       role: 'user',
       content: message,
     })
 
     // Persist assistant message
-    const { data: assistantMessage } = await (supabase
-      .from('chat_messages') as any)
-      .insert({
-        coach_id: user.id,
+    const [assistantMessage] = await db
+      .insert(chatMessages)
+      .values({
+        coachId: coach.id,
         role: 'assistant',
         content: result.content,
       })
-      .select('id')
-      .single() as { data: { id: string } | null }
+      .returning({ id: chatMessages.id })
 
     // Detect if response contains postable content and save as draft
-    // Simple heuristic: if the response is longer than 100 chars and doesn't start with a question
     let contentId: string | undefined
     const isPostableContent =
       result.content.length > 100 &&
@@ -147,25 +158,24 @@ export async function POST(request: NextRequest) {
       !result.content.toLowerCase().startsWith('would you ')
 
     if (isPostableContent) {
-      const { data: contentData } = await (supabase
-        .from('content') as any)
-        .insert({
-          coach_id: user.id,
+      const [contentData] = await db
+        .insert(content)
+        .values({
+          coachId: coach.id,
           type: 'instagram_post',
           status: 'draft',
           body: result.content,
         })
-        .select('id')
-        .single() as { data: { id: string } | null }
+        .returning({ id: content.id })
 
       contentId = contentData?.id
 
       // Link content to the assistant message
       if (contentId && assistantMessage?.id) {
-        await (supabase
-          .from('chat_messages') as any)
-          .update({ content_id: contentId })
-          .eq('id', assistantMessage.id)
+        await db
+          .update(chatMessages)
+          .set({ contentId })
+          .where(eq(chatMessages.id, assistantMessage.id))
       }
     }
 
@@ -174,6 +184,12 @@ export async function POST(request: NextRequest) {
       contentId,
     })
   } catch (error) {
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return NextResponse.json(
+        { error: 'Unauthorized', message: 'Authentication required' },
+        { status: 401 }
+      )
+    }
     console.error('Chat API error:', error)
     return NextResponse.json(
       { error: 'Internal error', message: 'Failed to process message' },

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { z } from 'zod'
+import { db } from '@/lib/db'
+import { content } from '@/lib/db/schema'
+import { getOrCreateCoach } from '@/lib/db/helpers'
+import { eq, desc } from 'drizzle-orm'
 import { moderateContent } from '@/lib/moderation'
 import { checkRateLimit, RATE_LIMIT_PRESETS } from '@/lib/rateLimit'
 
@@ -21,50 +24,57 @@ const contentCreateSchema = z.object({
  * LIMIT 100.
  */
 export async function GET(request: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  try {
+    const coach = await getOrCreateCoach()
 
-  if (!user) {
-    return NextResponse.json(
-      { error: 'Unauthorized', message: 'Authentication required' },
-      { status: 401 }
-    )
-  }
+    const { searchParams } = new URL(request.url)
+    const statusFilter = searchParams.get('status')
 
-  const { searchParams } = new URL(request.url)
-  const statusFilter = searchParams.get('status')
+    // Validate status filter if provided
+    if (statusFilter && !VALID_STATUSES.includes(statusFilter as typeof VALID_STATUSES[number])) {
+      return NextResponse.json(
+        { error: 'Invalid status', message: `Status must be one of: ${VALID_STATUSES.join(', ')}` },
+        { status: 400 }
+      )
+    }
 
-  // Validate status filter if provided
-  if (statusFilter && !VALID_STATUSES.includes(statusFilter as typeof VALID_STATUSES[number])) {
-    return NextResponse.json(
-      { error: 'Invalid status', message: `Status must be one of: ${VALID_STATUSES.join(', ')}` },
-      { status: 400 }
-    )
-  }
+    let query = db
+      .select({
+        id: content.id,
+        type: content.type,
+        status: content.status,
+        body: content.body,
+        frameworkId: content.frameworkId,
+        reminderAt: content.reminderAt,
+        createdAt: content.createdAt,
+        updatedAt: content.updatedAt,
+      })
+      .from(content)
+      .where(eq(content.coachId, coach.id))
+      .orderBy(desc(content.createdAt))
+      .limit(100)
+      .$dynamic()
 
-  // Select fields for list view (body needed for ContentCard preview truncation)
-  let query = supabase
-    .from('content')
-    .select('id, type, status, body, framework_id, reminder_at, created_at, updated_at')
-    .eq('coach_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(100)
+    if (statusFilter) {
+      query = query.where(eq(content.status, statusFilter))
+    }
 
-  if (statusFilter) {
-    query = query.eq('status', statusFilter)
-  }
+    const data = await query
 
-  const { data, error } = await query
-
-  if (error) {
+    return NextResponse.json(data)
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return NextResponse.json(
+        { error: 'Unauthorized', message: 'Authentication required' },
+        { status: 401 }
+      )
+    }
     console.error('Content fetch error:', error)
     return NextResponse.json(
       { error: 'Server error', message: 'Failed to fetch content' },
       { status: 500 }
     )
   }
-
-  return NextResponse.json(data)
 }
 
 /**
@@ -73,100 +83,84 @@ export async function GET(request: NextRequest) {
  * Returns content record with moderation result.
  */
 export async function POST(request: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json(
-      { error: 'Unauthorized', message: 'Authentication required' },
-      { status: 401 }
-    )
-  }
-
-  // Rate limiting (in-memory; use Redis in production for multi-instance deployments)
-  if (!checkRateLimit(`content:${user.id}`, RATE_LIMIT_PRESETS.content)) {
-    return NextResponse.json(
-      { error: 'Rate limited', message: 'Too many requests. Please wait a moment.' },
-      { status: 429 }
-    )
-  }
-
-  let body: unknown
   try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON', message: 'Request body must be valid JSON' },
-      { status: 400 }
-    )
-  }
+    const coach = await getOrCreateCoach()
 
-  const parsed = contentCreateSchema.safeParse(body)
-  if (!parsed.success) {
-    const errors = parsed.error.flatten()
-    const firstError = errors.fieldErrors.type?.[0]
-      || errors.fieldErrors.body?.[0]
-      || 'Invalid request data'
-    return NextResponse.json(
-      { error: 'Validation failed', message: firstError, details: errors },
-      { status: 400 }
-    )
-  }
-
-  const { type, body: contentBody, framework_id, framework_answers } = parsed.data
-
-  // Run moderation
-  const moderation = moderateContent(contentBody)
-
-  // Block red-rated content (dangerous health claims, legal risk)
-  if (moderation.rating === 'red') {
-    return NextResponse.json(
-      {
-        error: 'Content blocked',
-        message: 'This content contains prohibited terms and cannot be saved.',
-        moderation,
-      },
-      { status: 422 }
-    )
-  }
-
-  // Insert content (using 'as any' to work around Supabase TS inference issues)
-  const { data, error } = await (supabase
-    .from('content') as any)
-    .insert({
-      coach_id: user.id,
-      type,
-      body: contentBody,
-      status: 'draft',
-      framework_id: framework_id ?? null,
-      framework_answers: framework_answers ?? null,
-    })
-    .select()
-    .single()
-
-  if (error) {
-    console.error('Content create error:', error)
-    // Handle PostgreSQL constraint violations as 400s
-    const constraintErrors: Record<string, string> = {
-      '23503': 'Invalid framework_id provided',  // Foreign key violation
-      '23505': 'Duplicate content entry',         // Unique violation
-      '23514': 'Content validation failed',       // Check constraint violation
-      '23502': 'Required field is missing',       // Not-null violation
-    }
-    if (error.code && constraintErrors[error.code]) {
+    // Rate limiting (in-memory; use Redis in production for multi-instance deployments)
+    if (!checkRateLimit(`content:${coach.id}`, RATE_LIMIT_PRESETS.content)) {
       return NextResponse.json(
-        { error: 'Validation error', message: constraintErrors[error.code] },
+        { error: 'Rate limited', message: 'Too many requests. Please wait a moment.' },
+        { status: 429 }
+      )
+    }
+
+    let body: unknown
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid JSON', message: 'Request body must be valid JSON' },
         { status: 400 }
       )
     }
+
+    const parsed = contentCreateSchema.safeParse(body)
+    if (!parsed.success) {
+      const errors = parsed.error.flatten()
+      const firstError = errors.fieldErrors.type?.[0]
+        || errors.fieldErrors.body?.[0]
+        || 'Invalid request data'
+      return NextResponse.json(
+        { error: 'Validation failed', message: firstError, details: errors },
+        { status: 400 }
+      )
+    }
+
+    const { type, body: contentBody, framework_id, framework_answers } = parsed.data
+
+    // Run moderation
+    const moderation = moderateContent(contentBody)
+
+    // Block red-rated content (dangerous health claims, legal risk)
+    if (moderation.rating === 'red') {
+      return NextResponse.json(
+        {
+          error: 'Content blocked',
+          message: 'This content contains prohibited terms and cannot be saved.',
+          moderation,
+        },
+        { status: 422 }
+      )
+    }
+
+    // Insert content
+    const [data] = await db
+      .insert(content)
+      .values({
+        coachId: coach.id,
+        type,
+        body: contentBody,
+        status: 'draft',
+        frameworkId: framework_id ?? null,
+        frameworkAnswers: framework_answers ?? null,
+      })
+      .returning()
+
+    return NextResponse.json({
+      ...data,
+      moderation,
+    }, { status: 201 })
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return NextResponse.json(
+        { error: 'Unauthorized', message: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+    console.error('Content create error:', error)
     return NextResponse.json(
       { error: 'Server error', message: 'Failed to create content' },
       { status: 500 }
     )
   }
-
-  return NextResponse.json({
-    ...data,
-    moderation,
-  }, { status: 201 })
 }

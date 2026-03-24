@@ -3,7 +3,9 @@
  * Analyzes framework usage and brand profile to suggest relevant content.
  */
 
-import { createClient } from '@/lib/supabase/server'
+import { db } from '@/lib/db'
+import { content, brandProfiles } from '@/lib/db/schema'
+import { eq, gte, isNotNull, sql } from 'drizzle-orm'
 import { FRAMEWORKS, type Framework } from './frameworks'
 
 export interface ContentSuggestion {
@@ -15,9 +17,9 @@ export interface ContentSuggestion {
 }
 
 interface BrandProfile {
-  target_audience?: string
-  style_words?: string
-  avoided_topics?: string
+  targetAudience?: string | null
+  styleWords?: string | null
+  avoidedTopics?: string[] | null
 }
 
 /**
@@ -27,57 +29,58 @@ async function getRecentFrameworkUsage(
   coachId: string,
   days: number = 7
 ): Promise<Record<string, number>> {
-  const supabase = await createClient()
   const since = new Date()
   since.setDate(since.getDate() - days)
 
-  // Query content table for framework_id usage
-  const { data, error } = await (supabase
-    .from('content') as any)
-    .select('framework_id')
-    .eq('coach_id', coachId)
-    .gte('created_at', since.toISOString())
-    .not('framework_id', 'is', null) as { data: { framework_id: string | null }[] | null; error: Error | null }
+  try {
+    const data = await db
+      .select({ frameworkId: content.frameworkId })
+      .from(content)
+      .where(
+        sql`${content.coachId} = ${coachId}
+            AND ${content.createdAt} >= ${since}
+            AND ${content.frameworkId} IS NOT NULL`
+      )
 
-  if (error || !data) {
+    const usage: Record<string, number> = {}
+    for (const row of data) {
+      if (row.frameworkId) {
+        usage[row.frameworkId] = (usage[row.frameworkId] || 0) + 1
+      }
+    }
+
+    return usage
+  } catch {
     return {}
   }
-
-  const usage: Record<string, number> = {}
-  for (const row of data) {
-    if (row.framework_id) {
-      usage[row.framework_id] = (usage[row.framework_id] || 0) + 1
-    }
-  }
-
-  return usage
 }
 
 /**
  * Get coach's brand profile for topic generation.
  */
-async function getBrandProfile(coachId: string): Promise<BrandProfile | null> {
-  const supabase = await createClient()
+async function getBrandProfileForSuggestion(coachId: string): Promise<BrandProfile | null> {
+  try {
+    const [profile] = await db
+      .select({
+        targetAudience: brandProfiles.targetAudience,
+        styleWords: brandProfiles.styleWords,
+        avoidedTopics: brandProfiles.avoidedTopics,
+      })
+      .from(brandProfiles)
+      .where(eq(brandProfiles.coachId, coachId))
 
-  const { data, error } = await supabase
-    .from('brand_profiles')
-    .select('target_audience, style_words, avoided_topics')
-    .eq('coach_id', coachId)
-    .single()
-
-  if (error || !data) {
+    return profile ?? null
+  } catch {
     return null
   }
-
-  return data
 }
 
 /**
  * Generate a topic suggestion based on framework and brand profile.
  */
 function generateTopicForFramework(framework: Framework, profile: BrandProfile | null): string {
-  const audience = profile?.target_audience || 'your audience'
-  const style = profile?.style_words || 'motivating'
+  const audience = profile?.targetAudience || 'your audience'
+  const style = profile?.styleWords || 'motivating'
 
   // Framework-specific topic templates
   const topicTemplates: Record<string, string[]> = {
@@ -156,7 +159,7 @@ export async function suggestContent(coachId: string): Promise<ContentSuggestion
   const usage = await getRecentFrameworkUsage(coachId)
 
   // Get brand profile for topic personalization
-  const profile = await getBrandProfile(coachId)
+  const profile = await getBrandProfileForSuggestion(coachId)
 
   // Check if coach has no recent usage (last 7 days)
   const totalUsage = Object.values(usage).reduce((sum, count) => sum + count, 0)

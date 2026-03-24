@@ -1,16 +1,33 @@
-import { createClient } from '@/lib/supabase/server'
+import { auth } from '@clerk/nextjs/server'
+import { db } from '@/lib/db'
+import { coaches } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 import { AppShell } from './AppShell'
+import { hasAdminClaim } from '@/types/clerk'
 
 interface AppShellWrapperProps {
   children: React.ReactNode
 }
 
 export async function AppShellWrapper({ children }: AppShellWrapperProps) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { userId, sessionClaims } = await auth()
 
-  const adminEmail = process.env.ADMIN_EMAIL
-  const isAdmin = Boolean(adminEmail && user?.email === adminEmail)
+  let isAdmin = false
+
+  if (userId) {
+    // Check Clerk session claims first
+    if (hasAdminClaim(sessionClaims)) {
+      isAdmin = true
+    } else {
+      // Fall back to database check
+      const [coach] = await db
+        .select({ isAdmin: coaches.isAdmin })
+        .from(coaches)
+        .where(eq(coaches.clerkId, userId))
+
+      isAdmin = coach?.isAdmin ?? false
+    }
+  }
 
   return (
     <AppShell isAdmin={isAdmin}>

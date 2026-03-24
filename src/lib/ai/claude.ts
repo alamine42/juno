@@ -1,10 +1,17 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { ANTHROPIC_API_KEY, CLAUDE_MODEL } from '@/lib/env'
+import { env } from '@/lib/env'
 import { buildSystemPrompt, type BrandProfileForPrompt } from './prompts'
 
-const anthropic = new Anthropic({
-  apiKey: ANTHROPIC_API_KEY,
-})
+// Lazy-initialized Anthropic client to avoid build-time env var access
+let _anthropic: Anthropic | null = null
+
+function getAnthropicClient(): Anthropic {
+  if (_anthropic) return _anthropic
+  _anthropic = new Anthropic({
+    apiKey: env.ANTHROPIC_API_KEY,
+  })
+  return _anthropic
+}
 
 // Re-export for backwards compatibility
 export type { BrandProfileForPrompt as BrandProfile }
@@ -58,8 +65,8 @@ export async function generateContent(
   ]
 
   try {
-    const response = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
+    const response = await getAnthropicClient().messages.create({
+      model: env.CLAUDE_MODEL,
       max_tokens: 2048,
       system: systemPrompt,
       messages,
@@ -82,7 +89,7 @@ export async function generateContent(
       ? {
           input_tokens: response.usage.input_tokens,
           output_tokens: response.usage.output_tokens,
-          model: CLAUDE_MODEL,
+          model: env.CLAUDE_MODEL,
         }
       : undefined
 

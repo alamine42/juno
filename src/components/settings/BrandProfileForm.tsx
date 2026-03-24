@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Check, AlertCircle, X } from 'lucide-react'
 import { Textarea } from '@/components/ui/Textarea'
 import { Input } from '@/components/ui/Input'
-import { type BrandProfile } from '@/types/database'
+import { type BrandProfile } from '@/lib/db/schema'
 
 interface BrandProfileFormProps {
   initialProfile: BrandProfile | null
@@ -12,14 +12,14 @@ interface BrandProfileFormProps {
 }
 
 interface FormData {
-  target_audience: string
-  style_words: string
+  targetAudience: string
+  styleWords: string
   tone: string
-  emoji_usage: string
-  sign_off: string
-  avoided_topics: string
-  avoided_words: string
-  preferred_words: string
+  emojiUsage: string
+  signOff: string
+  avoidedTopics: string
+  avoidedWords: string
+  preferredWords: string
 }
 
 const TONES = ['Motivational', 'Educational', 'Casual', 'Professional', 'Raw'] as const
@@ -39,14 +39,14 @@ function parseStringToArray(str: string): string[] {
 
 export function BrandProfileForm({ initialProfile, onSave }: BrandProfileFormProps) {
   const [formData, setFormData] = useState<FormData>({
-    target_audience: initialProfile?.target_audience || '',
-    style_words: initialProfile?.style_words || '',
+    targetAudience: initialProfile?.targetAudience || '',
+    styleWords: initialProfile?.styleWords || '',
     tone: initialProfile?.tone || '',
-    emoji_usage: initialProfile?.emoji_usage || '',
-    sign_off: initialProfile?.sign_off || '',
-    avoided_topics: parseArrayToString(initialProfile?.avoided_topics),
-    avoided_words: parseArrayToString(initialProfile?.avoided_words),
-    preferred_words: parseArrayToString(initialProfile?.preferred_words),
+    emojiUsage: initialProfile?.emojiUsage || '',
+    signOff: initialProfile?.signOff || '',
+    avoidedTopics: parseArrayToString(initialProfile?.avoidedTopics),
+    avoidedWords: parseArrayToString(initialProfile?.avoidedWords),
+    preferredWords: parseArrayToString(initialProfile?.preferredWords),
   })
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -59,14 +59,14 @@ export function BrandProfileForm({ initialProfile, onSave }: BrandProfileFormPro
   useEffect(() => {
     if (initialProfile && !hasLoadedRef.current) {
       setFormData({
-        target_audience: initialProfile.target_audience || '',
-        style_words: initialProfile.style_words || '',
+        targetAudience: initialProfile.targetAudience || '',
+        styleWords: initialProfile.styleWords || '',
         tone: initialProfile.tone || '',
-        emoji_usage: initialProfile.emoji_usage || '',
-        sign_off: initialProfile.sign_off || '',
-        avoided_topics: parseArrayToString(initialProfile.avoided_topics),
-        avoided_words: parseArrayToString(initialProfile.avoided_words),
-        preferred_words: parseArrayToString(initialProfile.preferred_words),
+        emojiUsage: initialProfile.emojiUsage || '',
+        signOff: initialProfile.signOff || '',
+        avoidedTopics: parseArrayToString(initialProfile.avoidedTopics),
+        avoidedWords: parseArrayToString(initialProfile.avoidedWords),
+        preferredWords: parseArrayToString(initialProfile.preferredWords),
       })
       hasLoadedRef.current = true
     }
@@ -86,14 +86,14 @@ export function BrandProfileForm({ initialProfile, onSave }: BrandProfileFormPro
 
     try {
       const payload: Record<string, unknown> = {
-        target_audience: data.target_audience.trim() || null,
-        style_words: data.style_words.trim() || null,
+        target_audience: data.targetAudience.trim() || null,
+        style_words: data.styleWords.trim() || null,
         tone: data.tone.toLowerCase() || null,
-        emoji_usage: data.emoji_usage.toLowerCase() || null,
-        sign_off: data.sign_off.trim() || null,
-        avoided_topics: parseStringToArray(data.avoided_topics),
-        avoided_words: parseStringToArray(data.avoided_words),
-        preferred_words: parseStringToArray(data.preferred_words),
+        emoji_usage: data.emojiUsage.toLowerCase() || null,
+        sign_off: data.signOff.trim() || null,
+        avoided_topics: parseStringToArray(data.avoidedTopics),
+        avoided_words: parseStringToArray(data.avoidedWords),
+        preferred_words: parseStringToArray(data.preferredWords),
       }
 
       const response = await fetch('/api/profile', {
@@ -179,8 +179,8 @@ export function BrandProfileForm({ initialProfile, onSave }: BrandProfileFormPro
           Target Audience
         </label>
         <Textarea
-          value={formData.target_audience}
-          onChange={(e) => handleFieldChange('target_audience', e.target.value)}
+          value={formData.targetAudience}
+          onChange={(e) => handleFieldChange('targetAudience', e.target.value)}
           onBlur={handleBlur}
           placeholder="e.g., Busy professionals who want to build healthy habits without spending hours at the gym"
           rows={3}
@@ -197,8 +197,8 @@ export function BrandProfileForm({ initialProfile, onSave }: BrandProfileFormPro
           Style Words
         </label>
         <Input
-          value={formData.style_words}
-          onChange={(e) => handleFieldChange('style_words', e.target.value)}
+          value={formData.styleWords}
+          onChange={(e) => handleFieldChange('styleWords', e.target.value)}
           onBlur={handleBlur}
           placeholder="e.g., energetic, no-BS, supportive"
         />
@@ -243,14 +243,14 @@ export function BrandProfileForm({ initialProfile, onSave }: BrandProfileFormPro
         </label>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {EMOJI_OPTIONS.map((option) => {
-            const isSelected = formData.emoji_usage.toLowerCase() === option.toLowerCase()
+            const isSelected = formData.emojiUsage.toLowerCase() === option.toLowerCase()
             return (
               <button
                 key={option}
                 type="button"
                 onClick={() => {
-                  handleFieldChange('emoji_usage', option)
-                  save({ ...formData, emoji_usage: option })
+                  handleFieldChange('emojiUsage', option)
+                  save({ ...formData, emojiUsage: option })
                 }}
                 className={`px-3 py-2 rounded-lg border-2 text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 ${
                   isSelected
@@ -271,8 +271,8 @@ export function BrandProfileForm({ initialProfile, onSave }: BrandProfileFormPro
           Sign Off
         </label>
         <Input
-          value={formData.sign_off}
-          onChange={(e) => handleFieldChange('sign_off', e.target.value)}
+          value={formData.signOff}
+          onChange={(e) => handleFieldChange('signOff', e.target.value)}
           onBlur={handleBlur}
           placeholder="e.g., Let's go! 💪"
         />
@@ -287,8 +287,8 @@ export function BrandProfileForm({ initialProfile, onSave }: BrandProfileFormPro
           Preferred Words
         </label>
         <Input
-          value={formData.preferred_words}
-          onChange={(e) => handleFieldChange('preferred_words', e.target.value)}
+          value={formData.preferredWords}
+          onChange={(e) => handleFieldChange('preferredWords', e.target.value)}
           onBlur={handleBlur}
           placeholder="e.g., transform, unleash, crush it"
         />
@@ -303,8 +303,8 @@ export function BrandProfileForm({ initialProfile, onSave }: BrandProfileFormPro
           Avoided Words
         </label>
         <Input
-          value={formData.avoided_words}
-          onChange={(e) => handleFieldChange('avoided_words', e.target.value)}
+          value={formData.avoidedWords}
+          onChange={(e) => handleFieldChange('avoidedWords', e.target.value)}
           onBlur={handleBlur}
           placeholder="e.g., just, very, amazing"
         />
@@ -319,8 +319,8 @@ export function BrandProfileForm({ initialProfile, onSave }: BrandProfileFormPro
           Avoided Topics
         </label>
         <Textarea
-          value={formData.avoided_topics}
-          onChange={(e) => handleFieldChange('avoided_topics', e.target.value)}
+          value={formData.avoidedTopics}
+          onChange={(e) => handleFieldChange('avoidedTopics', e.target.value)}
           onBlur={handleBlur}
           placeholder="e.g., politics, competitor brands, specific diets"
           rows={2}

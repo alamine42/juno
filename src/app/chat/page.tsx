@@ -7,7 +7,6 @@ import { MessageBubble, type Message } from '@/components/chat/MessageBubble'
 import { ChatInput } from '@/components/chat/ChatInput'
 import { QuickActions } from '@/components/chat/QuickActions'
 import { MessageSkeleton } from '@/components/ui/Skeleton'
-import { createClient } from '@/lib/supabase/client'
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
@@ -16,28 +15,24 @@ export default function ChatPage() {
   const [error, setError] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const supabase = createClient()
 
   // Load chat history on mount
   useEffect(() => {
     async function loadHistory() {
       try {
-        const { data: history, error: historyError } = await (supabase
-          .from('chat_messages') as any)
-          .select('id, role, content, content_id')
-          .order('created_at', { ascending: true })
-          .limit(50) as { data: { id: string; role: string; content: string; content_id: string | null }[] | null; error: Error | null }
-
-        if (historyError) throw historyError
-
-        setMessages(
-          history?.map((msg) => ({
-            id: msg.id,
-            role: msg.role as 'user' | 'assistant',
-            content: msg.content,
-            contentId: msg.content_id ?? undefined,
-          })) ?? []
-        )
+        // Fetch chat history from API instead of using Supabase client directly
+        const response = await fetch('/api/messages')
+        if (response.ok) {
+          const history = await response.json()
+          setMessages(
+            history?.map((msg: { id: string; role: string; content: string; content_id: string | null }) => ({
+              id: msg.id,
+              role: msg.role as 'user' | 'assistant',
+              content: msg.content,
+              contentId: msg.content_id ?? undefined,
+            })) ?? []
+          )
+        }
       } catch (err) {
         console.error('Failed to load chat history:', err)
       } finally {
@@ -60,7 +55,7 @@ export default function ChatPage() {
 
     loadHistory()
     checkAdmin()
-  }, [supabase])
+  }, [])
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {

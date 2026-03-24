@@ -1,9 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
+import { useClerk } from '@clerk/nextjs'
 import { MessageCircle, FileText, Settings, LogOut, Shield } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
 
 interface NavItem {
   href: string
@@ -30,14 +30,12 @@ interface AppShellProps {
 
 export function AppShell({ children, isAdmin = false }: AppShellProps) {
   const pathname = usePathname()
-  const router = useRouter()
-  const supabase = createClient()
+  const { signOut } = useClerk()
 
   const navItems = isAdmin ? [...NAV_ITEMS, ADMIN_ITEM] : NAV_ITEMS
 
   async function handleSignOut() {
-    await supabase.auth.signOut()
-    router.push('/auth/login')
+    await signOut({ redirectUrl: '/sign-in' })
   }
 
   return (

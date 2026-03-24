@@ -1,13 +1,12 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { auth } from '@clerk/nextjs/server'
 
 export default async function Home() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { userId } = await auth()
 
   // Authenticated users go to chat
-  if (user) {
+  if (userId) {
     redirect('/chat')
   }
 
@@ -25,7 +24,7 @@ export default async function Home() {
           Create Instagram content that sounds like you
         </p>
         <Link
-          href="/auth/login"
+          href="/sign-in"
           className="inline-flex items-center justify-center min-h-[44px] bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
         >
           Get Started

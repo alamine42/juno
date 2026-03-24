@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { createServiceClient } from '@/lib/supabase/service'
+import { auth } from '@clerk/nextjs/server'
+import { db } from '@/lib/db'
+import { coaches } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
+import { hasAdminClaim } from '@/types/clerk'
 
 /**
  * GET /api/admin/check
@@ -9,24 +12,22 @@ import { createServiceClient } from '@/lib/supabase/service'
  * Returns { isAdmin: boolean }
  */
 export async function GET() {
-  const supabase = await createClient()
+  const { userId, sessionClaims } = await auth()
 
-  // Check authentication
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
+  if (!userId) {
     return NextResponse.json({ isAdmin: false })
   }
 
-  // Check admin flag using service client
-  const serviceClient = createServiceClient()
-  const { data: coach } = await serviceClient
-    .from('coaches')
-    .select('is_admin')
-    .eq('id', user.id)
-    .single()
+  // Check Clerk session claims first (faster)
+  if (hasAdminClaim(sessionClaims)) {
+    return NextResponse.json({ isAdmin: true })
+  }
 
-  return NextResponse.json({ isAdmin: coach?.is_admin ?? false })
+  // Fall back to database check
+  const [coach] = await db
+    .select({ isAdmin: coaches.isAdmin })
+    .from(coaches)
+    .where(eq(coaches.clerkId, userId))
+
+  return NextResponse.json({ isAdmin: coach?.isAdmin ?? false })
 }

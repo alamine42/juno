@@ -1,34 +1,30 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
-import { User, Palette, Bell, LogOut } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { User, Palette, LogOut } from 'lucide-react'
+import { useClerk, useUser } from '@clerk/nextjs'
 import { AppShell } from '@/components/layout/AppShell'
 import { BrandProfileForm } from '@/components/settings/BrandProfileForm'
 import { SettingsFormSkeleton, Skeleton } from '@/components/ui/Skeleton'
 import { ErrorMessage } from '@/components/ui/ErrorMessage'
 import { Button } from '@/components/ui/Button'
-import { createClient } from '@/lib/supabase/client'
-import { type BrandProfile, type Coach } from '@/types/database'
-import { useRouter } from 'next/navigation'
+import { type BrandProfile } from '@/lib/db/schema'
 
-type SettingsTab = 'brand' | 'account' | 'notifications'
+type SettingsTab = 'brand' | 'account'
 
 const TABS: { value: SettingsTab; label: string; icon: typeof Palette }[] = [
   { value: 'brand', label: 'Brand Voice', icon: Palette },
   { value: 'account', label: 'Account', icon: User },
-  // { value: 'notifications', label: 'Notifications', icon: Bell },  // Future
 ]
 
 export default function SettingsPage() {
-  const router = useRouter()
+  const { signOut } = useClerk()
+  const { user, isLoaded: isUserLoaded } = useUser()
   const [activeTab, setActiveTab] = useState<SettingsTab>('brand')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [profile, setProfile] = useState<BrandProfile | null>(null)
-  const [coach, setCoach] = useState<Coach | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
-  // Memoize client to prevent infinite useEffect loop
-  const supabase = useMemo(() => createClient(), [])
 
   // Check admin status
   useEffect(() => {
@@ -51,41 +47,13 @@ export default function SettingsPage() {
     setLoading(true)
     setError(null)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.push('/auth/login')
-        return
-      }
-
-      // Fetch coach data
-      const { data: coachData, error: coachError } = await supabase
-        .from('coaches')
-        .select('*')
-        .eq('id', user.id)
-        .single()
-
-      if (coachError) {
-        throw coachError
-      }
-
-      if (coachData) {
-        setCoach(coachData as Coach)
-      }
-
       // Fetch brand profile
-      const { data: profileData, error: profileError } = await supabase
-        .from('brand_profiles')
-        .select('*')
-        .eq('coach_id', user.id)
-        .single()
-
-      // PGRST116 means no rows found - that's OK for brand profiles
-      if (profileError && profileError.code !== 'PGRST116') {
-        throw profileError
-      }
-
-      if (profileData) {
-        setProfile(profileData as BrandProfile)
+      const response = await fetch('/api/profile')
+      if (response.ok) {
+        const profileData = await response.json()
+        setProfile(profileData)
+      } else if (response.status !== 404) {
+        throw new Error('Failed to load profile')
       }
     } catch (err) {
       console.error('Failed to fetch settings data:', err)
@@ -93,15 +61,14 @@ export default function SettingsPage() {
     } finally {
       setLoading(false)
     }
-  }, [supabase, router])
+  }, [])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/auth/login')
+    await signOut({ redirectUrl: '/sign-in' })
   }
 
   return (
@@ -153,7 +120,7 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {loading ? (
+          {loading || !isUserLoaded ? (
             <div className="max-w-2xl mx-auto" role="status" aria-label="Loading settings">
               <div className="mb-6">
                 <Skeleton className="h-6 w-32 mb-2" />
@@ -202,21 +169,16 @@ export default function SettingsPage() {
                           <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
                             Email
                           </label>
-                          <p className="text-sm text-gray-900">{coach?.email || 'Not set'}</p>
+                          <p className="text-sm text-gray-900">
+                            {user?.emailAddresses?.[0]?.emailAddress || 'Not set'}
+                          </p>
                         </div>
 
                         <div>
                           <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
                             Name
                           </label>
-                          <p className="text-sm text-gray-900">{coach?.name || 'Not set'}</p>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
-                            Timezone
-                          </label>
-                          <p className="text-sm text-gray-900">{coach?.timezone || 'UTC'}</p>
+                          <p className="text-sm text-gray-900">{user?.fullName || 'Not set'}</p>
                         </div>
 
                         <div>
@@ -224,8 +186,8 @@ export default function SettingsPage() {
                             Member since
                           </label>
                           <p className="text-sm text-gray-900">
-                            {coach?.created_at
-                              ? new Date(coach.created_at).toLocaleDateString('en-US', {
+                            {user?.createdAt
+                              ? new Date(user.createdAt).toLocaleDateString('en-US', {
                                   month: 'long',
                                   day: 'numeric',
                                   year: 'numeric',
@@ -262,24 +224,6 @@ export default function SettingsPage() {
                         Delete Account
                       </Button>
                     </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Notifications Tab (Future) */}
-              {activeTab === 'notifications' && (
-                <div role="tabpanel" id="tabpanel-notifications" aria-labelledby="tab-notifications">
-                  <div className="mb-6">
-                    <h2 className="text-lg font-semibold text-gray-900">Notifications</h2>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Choose how and when you want to be notified.
-                    </p>
-                  </div>
-
-                  <div className="bg-white rounded-xl border border-gray-200 p-5 sm:p-6">
-                    <p className="text-sm text-gray-500 text-center py-8">
-                      Notification settings coming soon...
-                    </p>
                   </div>
                 </div>
               )}

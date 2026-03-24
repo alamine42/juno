@@ -1,43 +1,58 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const mockGetUser = vi.fn()
-const mockFrom = vi.fn()
+// Mock the db helpers module
+const mockGetOrCreateCoach = vi.fn()
+const mockGetBrandProfile = vi.fn()
+const mockGetOrCreateBrandProfile = vi.fn()
 
-const { mockCreateClient } = vi.hoisted(() => ({
-  mockCreateClient: vi.fn(),
+vi.mock('@/lib/db/helpers', () => ({
+  getOrCreateCoach: () => mockGetOrCreateCoach(),
+  getBrandProfile: (coachId: string) => mockGetBrandProfile(coachId),
+  getOrCreateBrandProfile: (coachId: string) => mockGetOrCreateBrandProfile(coachId),
 }))
 
-vi.mock('@/lib/supabase/server', () => ({
-  createClient: mockCreateClient,
+// Mock the db module
+const mockDbUpdate = vi.fn()
+vi.mock('@/lib/db', () => ({
+  db: {
+    update: () => mockDbUpdate(),
+  },
 }))
 
 import { GET, PATCH } from '../route'
 
-function setupSupabase(overrides: { user?: any; selectResult?: any; updateResult?: any } = {}) {
-  const user = overrides.user ?? { id: 'user-123' }
-  const selectChain = {
-    select: vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue({
-        single: vi.fn().mockResolvedValue(overrides.selectResult ?? { data: { style_words: 'energetic' }, error: null }),
-      }),
-    }),
-  }
-  const updateChain = {
-    update: vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnValue({
-          single: vi.fn().mockResolvedValue(overrides.updateResult ?? { data: { style_words: 'calm' }, error: null }),
-        }),
-      }),
-    }),
+function setupMocks(overrides: {
+  user?: { id: string } | null
+  profile?: Record<string, unknown> | null
+  updateResult?: Record<string, unknown>
+} = {}) {
+  const user = overrides.user === undefined ? { id: 'coach-123', clerkId: 'user-123' } : overrides.user
+
+  if (user === null) {
+    mockGetOrCreateCoach.mockRejectedValue(new Error('Unauthorized'))
+  } else {
+    mockGetOrCreateCoach.mockResolvedValue(user)
   }
 
-  mockCreateClient.mockResolvedValue({
-    auth: {
-      getUser: vi.fn().mockResolvedValue({ data: { user }, error: null }),
-    },
-    from: vi.fn((table: string) => ({ ...selectChain, ...updateChain })),
+  mockGetBrandProfile.mockResolvedValue(
+    overrides.profile === undefined
+      ? { styleWords: 'energetic', tone: 'motivational' }
+      : overrides.profile
+  )
+
+  mockGetOrCreateBrandProfile.mockResolvedValue(
+    overrides.profile === undefined
+      ? { id: 'profile-123', coachId: 'coach-123', skippedCount: 0 }
+      : { id: 'profile-123', coachId: 'coach-123', skippedCount: 0, ...overrides.profile }
+  )
+
+  mockDbUpdate.mockReturnValue({
+    set: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([overrides.updateResult ?? { styleWords: 'calm' }]),
+      }),
+    }),
   })
 }
 
@@ -48,33 +63,34 @@ describe('Profile API Route', () => {
 
   describe('GET /api/profile', () => {
     it('returns 401 when not authenticated', async () => {
-      mockCreateClient.mockResolvedValue({
-        auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }) },
-        from: vi.fn(),
-      })
+      setupMocks({ user: null })
 
       const request = new NextRequest('http://localhost:3000/api/profile')
-      const response = await GET(request)
+      const response = await GET()
       expect(response.status).toBe(401)
     })
 
     it('returns brand profile for authenticated user', async () => {
-      setupSupabase({ selectResult: { data: { style_words: 'energetic', tone: 'motivational' }, error: null } })
+      setupMocks({ profile: { styleWords: 'energetic', tone: 'motivational' } })
 
       const request = new NextRequest('http://localhost:3000/api/profile')
-      const response = await GET(request)
+      const response = await GET()
       expect(response.status).toBe(200)
       const body = await response.json()
-      expect(body.style_words).toBe('energetic')
+      expect(body.styleWords).toBe('energetic')
+    })
+
+    it('returns 404 when profile not found', async () => {
+      setupMocks({ profile: null })
+
+      const response = await GET()
+      expect(response.status).toBe(404)
     })
   })
 
   describe('PATCH /api/profile', () => {
     it('returns 401 when not authenticated', async () => {
-      mockCreateClient.mockResolvedValue({
-        auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }) },
-        from: vi.fn(),
-      })
+      setupMocks({ user: null })
 
       const request = new NextRequest('http://localhost:3000/api/profile', {
         method: 'PATCH',
@@ -85,8 +101,8 @@ describe('Profile API Route', () => {
     })
 
     it('updates brand profile with valid data', async () => {
-      setupSupabase({
-        updateResult: { data: { style_words: 'calm', completed_at: '2024-01-01' }, error: null },
+      setupMocks({
+        updateResult: { styleWords: 'calm', completedAt: '2024-01-01' },
       })
 
       const request = new NextRequest('http://localhost:3000/api/profile', {
@@ -98,7 +114,7 @@ describe('Profile API Route', () => {
     })
 
     it('rejects invalid tone values', async () => {
-      setupSupabase()
+      setupMocks()
 
       const request = new NextRequest('http://localhost:3000/api/profile', {
         method: 'PATCH',
@@ -109,7 +125,7 @@ describe('Profile API Route', () => {
     })
 
     it('rejects invalid emoji_usage values', async () => {
-      setupSupabase()
+      setupMocks()
 
       const request = new NextRequest('http://localhost:3000/api/profile', {
         method: 'PATCH',
@@ -120,8 +136,8 @@ describe('Profile API Route', () => {
     })
 
     it('handles skip by incrementing skipped_count', async () => {
-      setupSupabase({
-        selectResult: { data: { skipped_count: 0 }, error: null },
+      setupMocks({
+        profile: { skippedCount: 0 },
       })
 
       const request = new NextRequest('http://localhost:3000/api/profile', {
@@ -135,7 +151,7 @@ describe('Profile API Route', () => {
     })
 
     it('truncates style_words to 255 chars', async () => {
-      setupSupabase()
+      setupMocks()
 
       const longStyle = 'a'.repeat(300)
       const request = new NextRequest('http://localhost:3000/api/profile', {

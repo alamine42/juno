@@ -1,21 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { headers } from 'next/headers'
-import { createServiceClient } from '@/lib/supabase/service'
+import { db } from '@/lib/db'
+import { content, coaches, systemHealth } from '@/lib/db/schema'
+import { eq, and, lte, isNull } from 'drizzle-orm'
 import { sendPostingReminder } from '@/lib/email/resend'
 import { moderateContent } from '@/lib/moderation'
 
 // Allow longer execution for processing multiple reminders
 export const maxDuration = 60
-
-interface ContentWithCoach {
-  id: string
-  body: string
-  coach_id: string
-  coaches: {
-    email: string
-    name: string | null
-  }
-}
 
 /**
  * Validate that the request is from Vercel Cron or has valid CRON_SECRET.
@@ -59,29 +51,26 @@ async function processReminders(): Promise<{
   skipped: number
   errors: number
 }> {
-  const supabase = createServiceClient()
-
-  // Get all content due for reminder
-  const { data: contentItems, error: queryError } = await supabase
-    .from('content')
-    .select(
-      `
-      id,
-      body,
-      coach_id,
-      coaches!inner(email, name)
-    `
+  // Get all content due for reminder with coach info
+  const contentItems = await db
+    .select({
+      id: content.id,
+      body: content.body,
+      coachId: content.coachId,
+      coachEmail: coaches.email,
+      coachName: coaches.name,
+    })
+    .from(content)
+    .innerJoin(coaches, eq(content.coachId, coaches.id))
+    .where(
+      and(
+        eq(content.status, 'reminder_set'),
+        lte(content.reminderAt, new Date()),
+        isNull(content.reminderSentAt)
+      )
     )
-    .eq('status', 'reminder_set')
-    .lte('reminder_at', new Date().toISOString())
-    .is('reminder_sent_at', null)
 
-  if (queryError) {
-    console.error('Failed to query reminders:', queryError)
-    throw queryError
-  }
-
-  if (!contentItems || contentItems.length === 0) {
+  if (contentItems.length === 0) {
     return { processed: 0, skipped: 0, errors: 0 }
   }
 
@@ -90,7 +79,7 @@ async function processReminders(): Promise<{
   let errors = 0
 
   // Process each reminder
-  for (const item of contentItems as unknown as ContentWithCoach[]) {
+  for (const item of contentItems) {
     try {
       // Re-run moderation check before sending
       const moderation = moderateContent(item.body)
@@ -103,8 +92,8 @@ async function processReminders(): Promise<{
       }
 
       // Get coach info
-      const coachEmail = item.coaches.email
-      const coachName = item.coaches.name || 'there'
+      const coachEmail = item.coachEmail
+      const coachName = item.coachName || 'there'
 
       // Generate content preview (first 500 chars)
       const contentPreview =
@@ -117,16 +106,10 @@ async function processReminders(): Promise<{
       })
 
       // Update reminder_sent_at (NOT status - coach manually confirms posting)
-      const { error: updateError } = await supabase
-        .from('content')
-        .update({ reminder_sent_at: new Date().toISOString() })
-        .eq('id', item.id)
-
-      if (updateError) {
-        console.error(`Failed to update reminder_sent_at for ${item.id}:`, updateError)
-        errors++
-        continue
-      }
+      await db
+        .update(content)
+        .set({ reminderSentAt: new Date() })
+        .where(eq(content.id, item.id))
 
       processed++
     } catch (err) {
@@ -146,24 +129,28 @@ async function recordCronHealth(stats: {
   skipped: number
   errors: number
 }): Promise<void> {
-  const supabase = createServiceClient()
-
   const value = {
     timestamp: new Date().toISOString(),
     ...stats,
   }
 
-  // Upsert the cron health record
-  const { error } = await supabase.from('system_health').upsert(
-    {
-      key: 'last_cron_run',
-      value,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'key' }
-  )
-
-  if (error) {
+  try {
+    // Upsert the cron health record
+    await db
+      .insert(systemHealth)
+      .values({
+        key: 'last_cron_run',
+        value,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: systemHealth.key,
+        set: {
+          value,
+          updatedAt: new Date(),
+        },
+      })
+  } catch (error) {
     console.error('Failed to record cron health:', error)
     // Don't throw - this is non-critical
   }
@@ -175,7 +162,7 @@ async function recordCronHealth(stats: {
  * Vercel Cron endpoint - runs every 30 minutes.
  * Processes due posting reminders with moderation checks.
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   // Validate cron request (requires Vercel user-agent)
   const isValid = await validateCronRequest(false)
   if (!isValid) {
@@ -205,7 +192,7 @@ export async function GET(request: NextRequest) {
  * Only requires CRON_SECRET, no user-agent check.
  * Returns processing stats for verification.
  */
-export async function POST(request: NextRequest) {
+export async function POST() {
   // Validate manual request (only secret, no user-agent check)
   const isValid = await validateCronRequest(true)
   if (!isValid) {
