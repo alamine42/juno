@@ -37,7 +37,15 @@ const chatMessageSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const coach = await getOrCreateCoach()
+    // Step 1: Get or create coach (requires auth)
+    let coach
+    try {
+      coach = await getOrCreateCoach()
+      console.log('[Chat API] Coach loaded:', coach.id)
+    } catch (authError) {
+      console.error('[Chat API] Auth/Coach error:', authError)
+      throw authError
+    }
 
     // Rate limiting
     if (!checkRateLimit(coach.id)) {
@@ -115,7 +123,9 @@ export async function POST(request: NextRequest) {
     } : null
 
     // Call Claude to generate content
+    console.log('[Chat API] Calling Claude API...')
     const result = await generateContent(message, brandProfileForAI, history)
+    console.log('[Chat API] Claude response success:', result.success)
 
     if (!result.success) {
       // Map AI error codes to HTTP status codes
@@ -190,7 +200,12 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       )
     }
-    console.error('Chat API error:', error)
+    // Log full error details for debugging
+    console.error('Chat API error:', {
+      message: error instanceof Error ? error.message : String(error),
+      name: error instanceof Error ? error.name : 'Unknown',
+      stack: error instanceof Error ? error.stack?.split('\n').slice(0, 5).join('\n') : undefined,
+    })
     return NextResponse.json(
       { error: 'Internal error', message: 'Failed to process message' },
       { status: 500 }

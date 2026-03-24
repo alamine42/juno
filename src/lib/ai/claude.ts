@@ -7,8 +7,9 @@ let _anthropic: Anthropic | null = null
 
 function getAnthropicClient(): Anthropic {
   if (_anthropic) return _anthropic
+  // Trim the API key to handle any whitespace that might have been added
   _anthropic = new Anthropic({
-    apiKey: env.ANTHROPIC_API_KEY,
+    apiKey: env.ANTHROPIC_API_KEY.trim(),
   })
   return _anthropic
 }
@@ -95,12 +96,14 @@ export async function generateContent(
 
     return { success: true, content, usage }
   } catch (err) {
-    // Log error without leaking the prompt
-    const error = err as Error & { status?: number; code?: string }
+    // Log error with full details for debugging
+    const error = err as Error & { status?: number; code?: string; cause?: unknown }
     console.error('Claude API error:', {
       message: error.message,
       status: error.status,
       code: error.code,
+      name: error.name,
+      stack: error.stack?.split('\n').slice(0, 5).join('\n'),
     })
 
     // Categorize the error
